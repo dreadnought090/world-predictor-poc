@@ -5,7 +5,7 @@ A Multi-Agent AI Simulation for Global Trends Prediction
 **Proof of Concept & Architectural Blueprint**
 
 ## 1. Core Vision & Concept
-**World Predictor** is a global *multi-agent* AI simulation system designed to predict macroeconomic trends, geopolitical stability, and the direction of global progress. This system deploys thousands of virtual agents in each country acting as a "digital society". These agents will consume daily news, react to new policies, and form global consensus in *real-time*.
+**World Predictor** is a global *multi-agent* AI simulation system designed to predict macroeconomic trends, geopolitical stability, and the direction of global progress. This system deploys thousands of virtual agents in each country acting as a "digital society" with each of the agents having identity proportional to the demographic percentages of each countries, such as jobs, income, race, religion, etc. These agents will consume daily news, react to new policies, and form global consensus in *real-time*.
 
 ## 2. System Architecture & Components
 The system is driven by three main engines:
