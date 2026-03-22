@@ -1,35 +1,12 @@
 from fastapi import APIRouter, Depends
-from world_predictor.simulation.engine import SimulationEngine
-from world_predictor.data.agents import AgentGenerator
-from world_predictor.data.news import NewsProcessor
-from pydantic import BaseModel
 from typing import List
 
+from world_predictor.simulation.engine import SimulationEngine
+from world_predictor.data.agents import AgentGenerator
+from world_predictor.api.container import get_simulation_engine, get_agent_generator
+from world_predictor.api.models import SimulationResult
+
 router = APIRouter()
-
-# Dependency injection for shared services
-def get_simulation_engine() -> SimulationEngine:
-    # This would be overridden in app.py to return the global singleton
-    return SimulationEngine([])
-
-def get_agent_generator() -> AgentGenerator:
-    return AgentGenerator()
-
-def get_news_processor() -> NewsProcessor:
-    return NewsProcessor()
-
-# Models
-class AgentUpdate(BaseModel):
-    id: str
-    economic_stability: float
-    optimism: float
-    trust_institutions: float
-
-class SimulationResult(BaseModel):
-    day: int
-    metrics: dict
-    consensus: dict
-    agent_updates: List[AgentUpdate]
 
 @router.post("/simulate", response_model=SimulationResult)
 async def simulate(

@@ -1,11 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
 from world_predictor.simulation.engine import SimulationEngine
 from world_predictor.data.agents import AgentGenerator
 from world_predictor.data.news import NewsProcessor
-from world_predictor.api.routes import router, get_simulation_engine
-from pydantic import BaseModel
-from typing import List, Dict
-from contextlib import asynccontextmanager
+from world_predictor.api.routes import router
+from world_predictor.api.container import get_simulation_engine
+from world_predictor.api.models import NewsRequest
 
 # Global state
 agent_generator = AgentGenerator()
@@ -28,16 +29,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="World Predictor API", lifespan=lifespan)
 app.include_router(router)
-
-class NewsRequest(BaseModel):
-    sources: List[str]
-    categories: List[str]
-
-class PredictionResponse(BaseModel):
-    country: str
-    stability_score: float
-    economic_flow: Dict[str, float]
-    social_sentiment: Dict[str, float]
 
 @app.get("/")
 async def root():
