@@ -1,0 +1,45 @@
+# World Predictor Configuration
+# Override any default by uncommenting and changing values.
+
+simulation:
+  agents_per_country: 300
+  countries:
+    - US
+    - CN
+    - IN
+    - BR
+    - RU
+    - JP
+    - DE
+    - GB
+    - FR
+    - KR
+    - AU
+    - MX
+    - ID
+    - NG
+    - EG
+    - SA
+    - TR
+    - PK
+    - PH
+    - TH
+  opinion_diffusion:
+    enabled: true
+    interactions_per_day: 5
+    confidence_bound: 0.4
+    shift_rate: 0.05
+  memory_decay:
+    enabled: true
+
+news:
+  fetch_interval_hours: 6
+  max_items_per_fetch: 100
+
+database:
+  path: world_predictor.db
+
+api:
+  port: 8000
+  cors_origins:
+    - "*"

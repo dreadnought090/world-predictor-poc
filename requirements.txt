@@ -9,3 +9,8 @@ beautifulsoup4==4.14.3
 scikit-learn==1.8.0
 plotly==6.6.0
 pycountry==26.2.16
+anthropic>=0.40.0
+feedparser>=6.0.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+apscheduler>=3.10.0
