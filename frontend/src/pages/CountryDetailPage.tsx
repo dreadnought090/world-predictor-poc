@@ -55,7 +55,12 @@ export default function CountryDetailPage() {
         <span className="text-4xl">{country?.flag}</span>
         <div>
           <h2 className="text-2xl font-bold">{country?.name || code}</h2>
-          <span className="text-xs text-slate-500 font-mono">Day {profile.day} &middot; {profile.agent_count} agents</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500 font-mono">Day {profile.day} &middot; {profile.agent_count} agents</span>
+            <Link to={`/country/${code}/agents`} className="text-[10px] text-accent hover:text-accent2 transition-colors font-semibold">
+              Explore Agents &rarr;
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -224,23 +229,75 @@ export default function CountryDetailPage() {
         </div>
       </div>
 
-      {/* Trend chart */}
-      {history.length > 0 && (
-        <div className="glass p-5">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-4">Metric History</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={history}>
-              <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 10 }} />
-              <YAxis domain={[0, 1]} tickFormatter={v => `${(v * 100).toFixed(0)}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
-              <Tooltip contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} formatter={(v: any) => `${(Number(v) * 100).toFixed(1)}%`} />
-              <Line dataKey="average_optimism" name="Optimism" stroke="#3b82f6" strokeWidth={2} dot={false} />
-              <Line dataKey="social_cohesion" name="Trust" stroke="#10b981" strokeWidth={2} dot={false} />
-              <Line dataKey="revolution_risk" name="Risk" stroke="#ef4444" strokeWidth={2} dot={false} />
-              <Line dataKey="political_stability" name="Stability" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      {/* Trend chart with forecast */}
+      {history.length > 0 && (() => {
+        // Compute forecast: simple linear regression on last N points, project 7 days
+        const forecastDays = 7
+        const metricKeys = ['average_optimism', 'social_cohesion', 'revolution_risk', 'political_stability'] as const
+        const lastDay = history[history.length - 1]?.day ?? 0
+
+        function linearForecast(data: any[], key: string, ahead: number) {
+          if (data.length < 3) return []
+          const n = Math.min(data.length, 14) // use last 14 points
+          const recent = data.slice(-n)
+          const xs = recent.map((_: any, i: number) => i)
+          const ys = recent.map((d: any) => d[key] ?? 0)
+          const mx = xs.reduce((a: number, b: number) => a + b, 0) / n
+          const my = ys.reduce((a: number, b: number) => a + b, 0) / n
+          let num = 0, den = 0
+          for (let i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2 }
+          const slope = den === 0 ? 0 : num / den
+          const intercept = my - slope * mx
+          const points = []
+          for (let d = 1; d <= ahead; d++) {
+            const val = Math.max(0, Math.min(1, intercept + slope * (n - 1 + d)))
+            points.push({ day: lastDay + d, [key]: +val.toFixed(4), forecast: true })
+          }
+          return points
+        }
+
+        // Build forecast data
+        let forecastData: any[] = []
+        for (let d = 1; d <= forecastDays; d++) {
+          const point: any = { day: lastDay + d, forecast: true }
+          metricKeys.forEach(k => {
+            const fc = linearForecast(history, k, d)
+            if (fc[d - 1]) point[k] = fc[d - 1][k]
+          })
+          forecastData.push(point)
+        }
+
+        // Merge history + forecast (add a bridge point)
+        const bridgePoint = { ...history[history.length - 1], forecast: false }
+        const forecastBridge = { ...bridgePoint, forecast: true }
+        const combinedData = [...history, forecastBridge, ...forecastData]
+
+        return (
+          <div className="glass p-5">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              Metric History + Forecast
+            </h3>
+            <p className="text-[9px] text-slate-600 mb-3">Solid = actual | Dashed = projected {forecastDays}-day forecast</p>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={combinedData}>
+                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 10 }} />
+                <YAxis domain={[0, 1]} tickFormatter={v => `${(v * 100).toFixed(0)}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
+                <Tooltip contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} formatter={(v: any) => `${(Number(v) * 100).toFixed(1)}%`} />
+                {/* Actual lines */}
+                <Line data={history} dataKey="average_optimism" name="Optimism" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                <Line data={history} dataKey="social_cohesion" name="Trust" stroke="#10b981" strokeWidth={2} dot={false} />
+                <Line data={history} dataKey="revolution_risk" name="Risk" stroke="#ef4444" strokeWidth={2} dot={false} />
+                <Line data={history} dataKey="political_stability" name="Stability" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                {/* Forecast lines (dashed) */}
+                <Line data={[forecastBridge, ...forecastData]} dataKey="average_optimism" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+                <Line data={[forecastBridge, ...forecastData]} dataKey="social_cohesion" stroke="#10b981" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+                <Line data={[forecastBridge, ...forecastData]} dataKey="revolution_risk" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+                <Line data={[forecastBridge, ...forecastData]} dataKey="political_stability" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )
+      })()}
 
       {/* News */}
       <div className="glass p-5">

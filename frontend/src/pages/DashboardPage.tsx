@@ -6,6 +6,7 @@ import TheWire from '../components/dashboard/TheWire'
 import GlobeMap from '../components/dashboard/GlobeMap'
 import CountryTable from '../components/dashboard/CountryTable'
 import MarketSignals from '../components/dashboard/MarketSignals'
+import SpilloverGraph from '../components/dashboard/SpilloverGraph'
 import ActiveEventsList from '../components/events/ActiveEventsList'
 import NewsFeed from '../components/news/NewsFeed'
 import { SkeletonCard, SkeletonTable } from '../components/common/Skeleton'
@@ -64,6 +65,9 @@ export default function DashboardPage() {
         </div>
         {isLoading ? <SkeletonTable rows={10} /> : <CountryTable data={predictions} />}
       </div>
+
+      {/* Spillover Network */}
+      <SpilloverGraph />
 
       {/* Market Signals */}
       <MarketSignals />

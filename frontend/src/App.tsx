@@ -4,6 +4,7 @@ import RootLayout from './layouts/RootLayout'
 import DashboardPage from './pages/DashboardPage'
 import CountryDetailPage from './pages/CountryDetailPage'
 import ScenariosPage from './pages/ScenariosPage'
+import AgentExplorerPage from './pages/AgentExplorerPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,6 +23,7 @@ export default function App() {
           <Route element={<RootLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="/country/:code" element={<CountryDetailPage />} />
+            <Route path="/country/:code/agents" element={<AgentExplorerPage />} />
             <Route path="/scenarios" element={<ScenariosPage />} />
           </Route>
         </Routes>

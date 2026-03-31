@@ -1,10 +1,20 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { usePresetEvents, usePresetPolicies } from '../api/queries'
 import { useRunScenario } from '../api/mutations'
 import { COUNTRIES } from '../constants/countries'
+import ScenarioComparePage from './ScenarioComparePage'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
+
+interface ScenarioResult {
+  name: string
+  scenario_id: string
+  days_simulated: number
+  events_injected: string[]
+  policies_injected: string[]
+  final_state: Record<string, any>
+}
 
 export default function ScenariosPage() {
   const { data: events } = usePresetEvents()
@@ -16,6 +26,8 @@ export default function ScenariosPage() {
   const [policy, setPolicy] = useState('')
   const [policyCountry, setPolicyCountry] = useState('US')
   const [days, setDays] = useState(30)
+  const [history, setHistory] = useState<ScenarioResult[]>([])
+  const [showCompare, setShowCompare] = useState(false)
 
   const handleRun = () => {
     if (!name) return
@@ -26,6 +38,10 @@ export default function ScenariosPage() {
       preset_policy: policy || undefined,
       policy_country: policyCountry,
       days,
+    }, {
+      onSuccess: (data) => {
+        setHistory(prev => [...prev, data])
+      }
     })
   }
 
@@ -33,7 +49,21 @@ export default function ScenariosPage() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4">
-      <h2 className="text-xl font-bold">Scenario Builder</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold">Scenario Builder</h2>
+        {history.length >= 2 && (
+          <button
+            onClick={() => setShowCompare(!showCompare)}
+            className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: showCompare ? 'rgba(168,85,247,0.2)' : 'rgba(59,130,246,0.2)',
+              color: showCompare ? '#a855f7' : '#60a5fa',
+            }}
+          >
+            {showCompare ? 'Hide Comparison' : `Compare (${history.length} scenarios)`}
+          </button>
+        )}
+      </div>
 
       <div className="glass p-5">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-4">Configure What-If Scenario</h3>
@@ -78,8 +108,33 @@ export default function ScenariosPage() {
         </div>
       </div>
 
-      {/* Results */}
-      {result && (
+      {/* Scenario History */}
+      {history.length > 0 && (
+        <div className="glass p-4">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Scenario History</h3>
+          <div className="flex flex-wrap gap-2">
+            {history.map((s, i) => (
+              <div key={i} className="bg-bg2 rounded-lg px-3 py-2 text-xs">
+                <span className="font-semibold text-accent2">#{i + 1}</span>
+                <span className="text-slate-300 ml-1.5">{s.name}</span>
+                <span className="text-slate-500 ml-1.5">{s.days_simulated}d</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Comparison */}
+      <AnimatePresence>
+        {showCompare && history.length >= 2 && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+            <ScenarioComparePage scenarios={history} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Latest Result */}
+      {result && !showCompare && (
         <div className="glass p-5">
           <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-4">
             Results: {result.name} ({result.days_simulated} days)
