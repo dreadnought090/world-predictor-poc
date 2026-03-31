@@ -10,6 +10,7 @@ import SpilloverGraph from '../components/dashboard/SpilloverGraph'
 import ActiveEventsList from '../components/events/ActiveEventsList'
 import NewsFeed from '../components/news/NewsFeed'
 import { SkeletonCard, SkeletonTable } from '../components/common/Skeleton'
+import { downloadCSV } from '../utils/export'
 
 export default function DashboardPage() {
   const { data, isLoading } = useAllPredictions()
@@ -61,7 +62,24 @@ export default function DashboardPage() {
       <div className="glass p-4">
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Country Dashboard</h3>
-          <span className="font-mono text-xs text-slate-500">{Object.keys(predictions).length} countries</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const rows = Object.entries(predictions).map(([code, p]) => ({
+                  country: code, day: p.day,
+                  optimism: (p.metrics.average_optimism * 100).toFixed(1),
+                  trust: (p.metrics.social_cohesion * 100).toFixed(1),
+                  stability: (p.metrics.political_stability * 100).toFixed(1),
+                  revolution_risk: (p.metrics.revolution_risk * 100).toFixed(1),
+                }))
+                downloadCSV(rows, `world-predictor-day-${maxDay}`)
+              }}
+              className="text-[9px] text-slate-500 hover:text-accent font-semibold uppercase tracking-wider transition-colors"
+            >
+              Export CSV
+            </button>
+            <span className="font-mono text-xs text-slate-500">{Object.keys(predictions).length} countries</span>
+          </div>
         </div>
         {isLoading ? <SkeletonTable rows={10} /> : <CountryTable data={predictions} />}
       </div>

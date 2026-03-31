@@ -36,6 +36,8 @@ export default function Header() {
           <nav className="hidden md:flex items-center gap-1 ml-2">
             <Link to="/" className="px-2 py-1 text-[10px] text-slate-500 hover:text-slate-300 font-semibold uppercase tracking-wider transition-colors">Dashboard</Link>
             <Link to="/scenarios" className="px-2 py-1 text-[10px] text-slate-500 hover:text-slate-300 font-semibold uppercase tracking-wider transition-colors">Scenarios</Link>
+            <Link to="/policies" className="px-2 py-1 text-[10px] text-slate-500 hover:text-slate-300 font-semibold uppercase tracking-wider transition-colors">Policies</Link>
+            <Link to="/validation" className="px-2 py-1 text-[10px] text-slate-500 hover:text-slate-300 font-semibold uppercase tracking-wider transition-colors">Validation</Link>
           </nav>
         </div>
 
