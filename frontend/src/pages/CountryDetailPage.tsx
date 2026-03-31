@@ -20,7 +20,7 @@ export default function CountryDetailPage() {
   )
   if (!profile) return <div className="text-center text-slate-500 mt-12">Country not found</div>
 
-  const { metrics: m, biometrics: bio, demographics: dem, institutions, relations, news, history } = profile
+  const { metrics: m, biometrics: bio, demographics: dem, institutions, relations, news, history, consensus } = profile
 
   const DemoPie = ({ data, title }: { data: { label: string; pct: number }[]; title: string }) => (
     <div className="bg-surface border border-border rounded-xl p-4">
@@ -68,6 +68,50 @@ export default function CountryDetailPage() {
         <MetricCard label="Risk Aversion" value={m.average_risk_aversion} color="#f87171" />
         <MetricCard label="Agents" value={profile.agent_count} color="#e2e8f0" format="number" />
       </div>
+
+      {/* Reaction Distribution */}
+      {consensus?.reaction_distribution && (
+        <div className="glass p-5">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-3">Population Reaction</h3>
+          <div className="flex gap-0.5 h-8 rounded-lg overflow-hidden">
+            {Object.entries(consensus.reaction_distribution).map(([reaction, pct]) => {
+              const colors: Record<string, string> = {
+                SUPPORT: '#22c55e', OPPOSITION: '#f97316', FEAR: '#ef4444', CONFUSION: '#a855f7', APATHY: '#64748b',
+              }
+              const width = pct * 100
+              if (width < 0.5) return null
+              return (
+                <div
+                  key={reaction}
+                  className="relative flex items-center justify-center transition-all duration-500"
+                  style={{ width: `${width}%`, background: colors[reaction] || '#64748b' }}
+                  title={`${reaction}: ${(pct * 100).toFixed(1)}%`}
+                >
+                  {width > 8 && (
+                    <span className="text-[9px] font-bold text-white/90 truncate px-1">
+                      {reaction} {(pct * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex flex-wrap gap-3 mt-2">
+            {Object.entries(consensus.reaction_distribution).map(([reaction, pct]) => {
+              const colors: Record<string, string> = {
+                SUPPORT: '#22c55e', OPPOSITION: '#f97316', FEAR: '#ef4444', CONFUSION: '#a855f7', APATHY: '#64748b',
+              }
+              return (
+                <span key={reaction} className="flex items-center gap-1 text-[10px]">
+                  <span className="w-2 h-2 rounded-full" style={{ background: colors[reaction] || '#64748b' }} />
+                  <span className="text-slate-400">{reaction}</span>
+                  <span className="font-mono font-semibold" style={{ color: colors[reaction] }}>{(pct * 100).toFixed(1)}%</span>
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Biometrics */}
       <div className="glass p-5">

@@ -1,8 +1,11 @@
 import { motion } from 'framer-motion'
 import { useAllPredictions } from '../api/queries'
+import ThreatLevel from '../components/dashboard/ThreatLevel'
 import GlobalMetricsStrip from '../components/dashboard/GlobalMetricsStrip'
+import TheWire from '../components/dashboard/TheWire'
 import GlobeMap from '../components/dashboard/GlobeMap'
 import CountryTable from '../components/dashboard/CountryTable'
+import MarketSignals from '../components/dashboard/MarketSignals'
 import ActiveEventsList from '../components/events/ActiveEventsList'
 import NewsFeed from '../components/news/NewsFeed'
 import { SkeletonCard, SkeletonTable } from '../components/common/Skeleton'
@@ -19,12 +22,18 @@ export default function DashboardPage() {
       transition={{ duration: 0.3 }}
       className="flex flex-col gap-4"
     >
+      {/* Threat Level */}
+      <ThreatLevel />
+
       {/* Metrics strip */}
       {isLoading ? (
         <div className="grid grid-cols-5 gap-3">{Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}</div>
       ) : (
         <GlobalMetricsStrip data={predictions} />
       )}
+
+      {/* The Wire */}
+      <TheWire />
 
       {/* Globe + Events + News */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">
@@ -55,6 +64,9 @@ export default function DashboardPage() {
         </div>
         {isLoading ? <SkeletonTable rows={10} /> : <CountryTable data={predictions} />}
       </div>
+
+      {/* Market Signals */}
+      <MarketSignals />
     </motion.div>
   )
 }

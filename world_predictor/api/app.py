@@ -349,6 +349,7 @@ async def get_country_profile(country: str):
             "trust": {"mean": round(float(np.mean([a.behavior["trust_institutions"] for a in agents])), 3)},
             "risk_aversion": {"mean": round(float(np.mean([a.behavior["risk_aversion"] for a in agents])), 3)},
         },
+        "consensus": ce._build_consensus(ce.reaction_history.get(ce.current_day, {})),
         "institutions": institutions,
         "relations": relations,
         "news": country_news,

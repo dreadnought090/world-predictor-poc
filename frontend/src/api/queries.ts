@@ -67,6 +67,15 @@ export function usePresetPolicies() {
   })
 }
 
+export function useMarketSignals() {
+  return useQuery<{ signals: { country: string; currency: string; rate_to_usd: number; strength: number }[] }>({
+    queryKey: ['market', 'signals'],
+    queryFn: () => client.get('/market/signals').then(r => r.data),
+    refetchInterval: 60000,
+    retry: false,
+  })
+}
+
 export function useRelations(country: string) {
   return useQuery({
     queryKey: ['relations', country],

@@ -21,11 +21,19 @@ export interface DemographicDist {
   pct: number
 }
 
+export interface Consensus {
+  economic_policy_support: number
+  government_trust: number
+  future_optimism: number
+  reaction_distribution?: Record<string, number>
+}
+
 export interface CountryProfile {
   country: string
   day: number
   agent_count: number
   metrics: Metrics
+  consensus?: Consensus
   demographics: {
     race: DemographicDist[]
     religion: DemographicDist[]
