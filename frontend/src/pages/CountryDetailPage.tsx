@@ -256,21 +256,33 @@ export default function CountryDetailPage() {
           return points
         }
 
-        // Build forecast data
-        let forecastData: any[] = []
+        // Build forecast points using a single regression call per metric
+        const forecastPoints: any[] = []
         for (let d = 1; d <= forecastDays; d++) {
-          const point: any = { day: lastDay + d, forecast: true }
+          const point: any = { day: lastDay + d }
           metricKeys.forEach(k => {
-            const fc = linearForecast(history, k, d)
-            if (fc[d - 1]) point[k] = fc[d - 1][k]
+            const fc = linearForecast(history, k, forecastDays)
+            if (fc[d - 1]) point[`fc_${k}`] = fc[d - 1][k]
           })
-          forecastData.push(point)
+          forecastPoints.push(point)
         }
 
-        // Merge history + forecast (add a bridge point)
-        const bridgePoint = { ...history[history.length - 1], forecast: false }
-        const forecastBridge = { ...bridgePoint, forecast: true }
-        const combinedData = [...history, forecastBridge, ...forecastData]
+        // Build combined dataset with separate keys: actual values use original keys, forecast uses fc_ prefix
+        // History rows have actual keys, forecast keys are null
+        // Forecast rows have fc_ keys, actual keys are null
+        // Bridge point connects them (has both)
+        const lastHist = history[history.length - 1]
+        const bridge: any = { day: lastHist.day }
+        metricKeys.forEach(k => {
+          bridge[k] = lastHist[k as keyof typeof lastHist]
+          bridge[`fc_${k}`] = lastHist[k as keyof typeof lastHist]
+        })
+
+        const chartData = [
+          ...history.map(h => ({ ...h })),
+          bridge,
+          ...forecastPoints,
+        ]
 
         return (
           <div className="glass p-5">
@@ -279,20 +291,20 @@ export default function CountryDetailPage() {
             </h3>
             <p className="text-[9px] text-slate-600 mb-3">Solid = actual | Dashed = projected {forecastDays}-day forecast</p>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={combinedData}>
+              <LineChart data={chartData}>
                 <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 10 }} />
                 <YAxis domain={[0, 1]} tickFormatter={v => `${(v * 100).toFixed(0)}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
                 <Tooltip contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} formatter={(v: any) => `${(Number(v) * 100).toFixed(1)}%`} />
-                {/* Actual lines */}
-                <Line data={history} dataKey="average_optimism" name="Optimism" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                <Line data={history} dataKey="social_cohesion" name="Trust" stroke="#10b981" strokeWidth={2} dot={false} />
-                <Line data={history} dataKey="revolution_risk" name="Risk" stroke="#ef4444" strokeWidth={2} dot={false} />
-                <Line data={history} dataKey="political_stability" name="Stability" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                {/* Forecast lines (dashed) */}
-                <Line data={[forecastBridge, ...forecastData]} dataKey="average_optimism" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
-                <Line data={[forecastBridge, ...forecastData]} dataKey="social_cohesion" stroke="#10b981" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
-                <Line data={[forecastBridge, ...forecastData]} dataKey="revolution_risk" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
-                <Line data={[forecastBridge, ...forecastData]} dataKey="political_stability" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+                {/* Actual lines (solid) */}
+                <Line dataKey="average_optimism" name="Optimism" stroke="#3b82f6" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line dataKey="social_cohesion" name="Trust" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line dataKey="revolution_risk" name="Risk" stroke="#ef4444" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line dataKey="political_stability" name="Stability" stroke="#8b5cf6" strokeWidth={2} dot={false} connectNulls={false} />
+                {/* Forecast lines (dashed, fc_ prefixed keys) */}
+                <Line dataKey="fc_average_optimism" name="Optimism (forecast)" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+                <Line dataKey="fc_social_cohesion" name="Trust (forecast)" stroke="#10b981" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+                <Line dataKey="fc_revolution_risk" name="Risk (forecast)" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
+                <Line dataKey="fc_political_stability" name="Stability (forecast)" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="6 4" dot={false} connectNulls />
               </LineChart>
             </ResponsiveContainer>
           </div>

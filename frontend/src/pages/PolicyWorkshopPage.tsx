@@ -47,6 +47,8 @@ export default function PolicyWorkshopPage() {
         { policy: policyA, country, final_state: resultA.final_state },
         { policy: policyB, country, final_state: resultB.final_state },
       ])
+    } catch {
+      // toast error already handled by mutation's onError
     } finally {
       setRunning(false)
     }

@@ -41,10 +41,11 @@ export default function ScenarioComparePage({ scenarios }: { scenarios: Scenario
   }
 
   // Radar data: average across all countries per metric
+  const n = countries.length || 1
   const radarData = metrics.map(m => ({
     metric: metricLabels[m],
-    [a.name]: +(countries.reduce((s, c) => s + (a.final_state[c]?.[m] || 0), 0) / countries.length * 100).toFixed(1),
-    [b.name]: +(countries.reduce((s, c) => s + (b.final_state[c]?.[m] || 0), 0) / countries.length * 100).toFixed(1),
+    [a.name]: +(countries.reduce((s, c) => s + (a.final_state[c]?.[m] || 0), 0) / n * 100).toFixed(1),
+    [b.name]: +(countries.reduce((s, c) => s + (b.final_state[c]?.[m] || 0), 0) / n * 100).toFixed(1),
   }))
 
   // Delta bar chart: show revolution risk delta per country

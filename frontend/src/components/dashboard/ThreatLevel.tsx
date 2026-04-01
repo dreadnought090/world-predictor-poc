@@ -21,8 +21,9 @@ export default function ThreatLevel() {
   const { data: predictions } = useAllPredictions()
 
   const tension = tensionData?.global_tension_index ?? 0
-  const avgRisk = predictions
-    ? Object.values(predictions).reduce((s, p) => s + p.metrics.revolution_risk, 0) / Object.values(predictions).length
+  const predValues = predictions ? Object.values(predictions) : []
+  const avgRisk = predValues.length > 0
+    ? predValues.reduce((s, p) => s + p.metrics.revolution_risk, 0) / predValues.length
     : 0
   const compositeScore = tension * 0.4 + avgRisk * 0.6
   const level = getLevel(compositeScore)

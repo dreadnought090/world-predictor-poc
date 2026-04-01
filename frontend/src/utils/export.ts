@@ -5,13 +5,19 @@ export function downloadCSV(data: Record<string, any>[], filename: string) {
   if (data.length === 0) return
 
   const headers = Object.keys(data[0])
+
+  function escapeCSV(val: any): string {
+    if (val === null || val === undefined) return ''
+    const str = String(val)
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+      return '"' + str.replace(/"/g, '""') + '"'
+    }
+    return str
+  }
+
   const csvRows = [
-    headers.join(','),
-    ...data.map(row => headers.map(h => {
-      const val = row[h]
-      if (typeof val === 'string' && val.includes(',')) return `"${val}"`
-      return val ?? ''
-    }).join(','))
+    headers.map(escapeCSV).join(','),
+    ...data.map(row => headers.map(h => escapeCSV(row[h])).join(','))
   ]
 
   const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' })
