@@ -575,17 +575,31 @@ async def run_scenario(
     if preset_policy and preset_policy in PRESET_POLICIES:
         policies[policy_country] = [copy.deepcopy(PRESET_POLICIES[preset_policy])]
 
-    # Fetch current news for scenario
-    items = news_processor.fetch_daily_news()
+    # Use cached news instead of fetching live (avoids blocking HTTP requests)
+    items = []
+    if db:
+        cached = db.search_news(limit=20)
+        from world_predictor.data.news import NewsItem as NI, NewsSource
+        for c in cached:
+            items.append(NI(
+                title=c.get("title", ""),
+                source=NewsSource(c.get("source_name", "Unknown"), 0.0, 0.7),
+                category=c.get("category", "general"),
+                content="", url="",
+                region=c.get("region", "Global"),
+                impact=c.get("impact", 0.3),
+            ))
 
-    result = simulation_engine.scenario_engine.run_scenario(
+    import asyncio
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: simulation_engine.scenario_engine.run_scenario(
         engine=simulation_engine,
         name=name, description=description,
         events=events or None,
         policies=policies or None,
         news_items=items,
         days=days,
-    )
+    ))
 
     return {
         "scenario_id": result.scenario_id,
