@@ -11,6 +11,15 @@ class Agent:
     behavior: Dict[str, float]
     location: str
     politics: float  # -1 to 1
+    iq: int = 100  # cached int to avoid string->int conversion in hot paths
+
+    def __post_init__(self):
+        # Keep iq int in sync with demographics dict if caller only set the string form
+        if self.iq == 100 and isinstance(self.demographics, dict) and "iq" in self.demographics:
+            try:
+                self.iq = int(self.demographics["iq"])
+            except (TypeError, ValueError):
+                self.iq = 100
 
 # ---------------------------------------------------------------------------
 # Real-world demographic distributions per country
@@ -416,6 +425,7 @@ class AgentGenerator:
                 },
                 location=country_code,
                 politics=round(float(politics_arr[i]), 4),
+                iq=iq,
             )
             agents.append(agent)
         return agents

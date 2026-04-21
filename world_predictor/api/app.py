@@ -149,14 +149,24 @@ async def get_all_predictions():
 
 @app.post("/fetch_news")
 async def fetch_news():
-    """Fetch real news, classify, and run simulation for all countries."""
-    items = news_processor.fetch_daily_news()
+    """Fetch real news, classify, and run simulation for all countries.
+
+    Both the HTTP fetch and the CPU-heavy simulation are dispatched to a
+    worker thread so the ASGI event loop stays responsive.
+    """
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    # 1. Fetch news off the event loop (blocking HTTP requests)
+    items = await loop.run_in_executor(None, news_processor.fetch_daily_news)
     categorized = news_processor.categorize_news(items)
 
-    # Run simulation with fetched news
+    # 2. Run simulation off the event loop (CPU-heavy, 6000+ agent iterations)
     sim_results = {}
     if simulation_engine and items:
-        sim_results = simulation_engine.process_day(items)
+        sim_results = await loop.run_in_executor(
+            None, simulation_engine.process_day, items
+        )
 
     return {
         "total_news": len(items),
@@ -190,8 +200,12 @@ async def simulate_batch(days: int = 10):
     if not simulation_engine:
         return {"error": "Engine not initialized"}
 
-    items = news_processor.fetch_daily_news()
-    results = simulation_engine.simulate_batch(items, days=days)
+    import asyncio
+    loop = asyncio.get_event_loop()
+    items = await loop.run_in_executor(None, news_processor.fetch_daily_news)
+    results = await loop.run_in_executor(
+        None, lambda: simulation_engine.simulate_batch(items, days=days)
+    )
 
     return {
         "days_simulated": days,
@@ -268,7 +282,7 @@ async def get_country_profile(country: str):
         return [{"label": k, "count": v, "pct": round(v / total * 100, 1)} for k, v in c.most_common()]
 
     ages = [int(a.demographics["age"]) for a in agents]
-    iqs = [int(a.demographics["iq"]) for a in agents]
+    iqs = [a.iq for a in agents]
     incomes = [a.economic["income"] for a in agents]
     politics_vals = [a.politics for a in agents]
 

@@ -153,9 +153,7 @@ class CountryEngine:
                 interactions += 1
 
                 # IQ + education similarity modulates influence strength
-                iq_a = int(agent.demographics.get("iq", "100"))
-                iq_p = int(peer.demographics.get("iq", "100"))
-                iq_similarity = 1 - abs(iq_a - iq_p) / 60.0
+                iq_similarity = 1 - abs(agent.iq - peer.iq) / 60.0
                 influence = shift_rate * max(0.2, iq_similarity)
 
                 # Pull opinions toward each other
@@ -233,18 +231,28 @@ class CountryEngine:
     # ---- Metrics ----
 
     def _calculate_metrics(self) -> Dict[str, float]:
-        economic_sentiment = float(np.mean([a.economic["financial_stability"] for a in self.agents]))
-        social_cohesion = float(np.mean([a.behavior["trust_institutions"] for a in self.agents]))
-        political_stability = float(1 - (np.std([a.politics for a in self.agents]) / 2))
-        avg_optimism = float(np.mean([a.behavior["optimism"] for a in self.agents]))
-        avg_risk_aversion = float(np.mean([a.behavior["risk_aversion"] for a in self.agents]))
+        # Single-pass: build one (N, 5) array then reduce along axis 0.
+        # Avoids 5 separate list comprehensions + 5 numpy allocations.
+        arr = np.fromiter(
+            (v for a in self.agents for v in (
+                a.economic["financial_stability"],
+                a.behavior["trust_institutions"],
+                a.politics,
+                a.behavior["optimism"],
+                a.behavior["risk_aversion"],
+            )),
+            dtype=np.float64,
+            count=len(self.agents) * 5,
+        ).reshape(-1, 5)
+        means = arr.mean(axis=0)
+        pol_std = float(arr[:, 2].std())
 
         return {
-            "economic_sentiment": round(economic_sentiment, 4),
-            "social_cohesion": round(social_cohesion, 4),
-            "political_stability": round(political_stability, 4),
-            "average_optimism": round(avg_optimism, 4),
-            "average_risk_aversion": round(avg_risk_aversion, 4),
+            "economic_sentiment": round(float(means[0]), 4),
+            "social_cohesion": round(float(means[1]), 4),
+            "political_stability": round(1 - pol_std / 2, 4),
+            "average_optimism": round(float(means[3]), 4),
+            "average_risk_aversion": round(float(means[4]), 4),
         }
 
     def _build_consensus(self, day_reactions: Dict[str, str]) -> Dict[str, Any]:
@@ -371,11 +379,12 @@ class SimulationEngine:
             result = engine.process_day(country_news)
             results[country] = result
 
-            # 5. Persist to database
+            # 5. Persist to database (commit once per tick, not per country)
             if self.db:
                 self.db.save_daily_metrics(
                     country, result["day"], result["metrics"],
                     result["reactions"], result["consensus"],
+                    commit=False,
                 )
 
         # 6. Inter-country spillover effects
@@ -400,7 +409,11 @@ class SimulationEngine:
         for r in results.values():
             r["metrics"]["global_tension"] = round(global_tension, 4)
 
-        # Archive news
+        # Flush all daily metric inserts in one commit (1 fsync instead of N)
+        if self.db:
+            self.db.flush()
+
+        # Archive news (has its own commit)
         if self.db and news_items:
             self.db.save_news_items(news_items)
 

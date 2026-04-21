@@ -84,8 +84,12 @@ class Database:
 
     # ---- Daily Metrics ----
 
-    def save_daily_metrics(self, country: str, day: int, metrics: Dict, reactions: Dict, consensus: Dict):
-        """Save daily simulation metrics for a country."""
+    def save_daily_metrics(self, country: str, day: int, metrics: Dict, reactions: Dict, consensus: Dict, commit: bool = True):
+        """Save daily simulation metrics for a country.
+
+        Set ``commit=False`` when writing many rows in a tick; caller must invoke
+        ``flush()`` afterward. Cuts fsync calls from O(countries) to O(1) per tick.
+        """
         self.conn.execute("""
             INSERT OR REPLACE INTO daily_metrics
             (country, day, economic_sentiment, social_cohesion, political_stability,
@@ -104,6 +108,11 @@ class Database:
             json.dumps(reactions.get("distribution", {})),
             json.dumps(consensus),
         ))
+        if commit:
+            self.conn.commit()
+
+    def flush(self):
+        """Commit pending writes. Pair with ``commit=False`` batch inserts."""
         self.conn.commit()
 
     def get_metrics_history(self, country: str, days: int = 30) -> List[Dict]:
@@ -141,18 +150,23 @@ class Database:
     # ---- News Archive ----
 
     def save_news_items(self, items: List[Any]):
-        """Archive news items."""
-        for item in items:
-            self.conn.execute("""
-                INSERT INTO news_archive
-                (title, source_name, source_politics, source_credibility,
-                 category, region, impact, url, content)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
+        """Archive news items in one batched insert."""
+        if not items:
+            return
+        rows = [
+            (
                 item.title, item.source.name, item.source.politics,
                 item.source.credibility, item.category, item.region,
-                item.impact, item.url, item.content[:1000],
-            ))
+                item.impact, item.url, (item.content or "")[:1000],
+            )
+            for item in items
+        ]
+        self.conn.executemany("""
+            INSERT INTO news_archive
+            (title, source_name, source_politics, source_credibility,
+             category, region, impact, url, content)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, rows)
         self.conn.commit()
 
     def search_news(self, category: Optional[str] = None, region: Optional[str] = None,

@@ -77,6 +77,7 @@ class ScenarioEngine:
                     behavior=dict(a.behavior),
                     location=a.location,
                     politics=float(a.politics),
+                    iq=a.iq,
                 )
                 for a in ce.agents
             ]

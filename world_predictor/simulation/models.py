@@ -45,7 +45,7 @@ class TrustModel:
 
         # IQ factor: higher IQ agents weigh credibility more, lower IQ agents
         # are more influenced by political alignment
-        iq = int(agent.demographics.get("iq", "100"))
+        iq = agent.iq
         iq_factor = min(1.0, max(0.0, (iq - 70) / 60.0))  # 0.0 at IQ 70, 1.0 at IQ 130
 
         # Weighted combination — IQ shifts weight from alignment toward credibility
@@ -67,7 +67,7 @@ class TrustModel:
         """
         impact = news.impact
         political_gap = abs(agent.politics - news.source.politics)
-        iq = int(agent.demographics.get("iq", "100"))
+        iq = agent.iq
         risk_aversion = agent.behavior.get("risk_aversion", 0.5)
         optimism = agent.behavior.get("optimism", 0.5)
 
