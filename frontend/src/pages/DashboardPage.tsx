@@ -3,7 +3,6 @@ import { motion } from 'framer-motion'
 import { useAllPredictions } from '../api/queries'
 import ThreatLevel from '../components/dashboard/ThreatLevel'
 import GlobalMetricsStrip from '../components/dashboard/GlobalMetricsStrip'
-import TheWire from '../components/dashboard/TheWire'
 import CountryTable from '../components/dashboard/CountryTable'
 import MarketSignals from '../components/dashboard/MarketSignals'
 import SpilloverGraph from '../components/dashboard/SpilloverGraph'
@@ -35,9 +34,6 @@ export default function DashboardPage() {
       ) : (
         <GlobalMetricsStrip data={predictions} />
       )}
-
-      {/* The Wire */}
-      <TheWire />
 
       {/* Globe + Events + News */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4">

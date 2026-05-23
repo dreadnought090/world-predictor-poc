@@ -22,6 +22,7 @@ export function useFetchNews() {
       qc.invalidateQueries({ queryKey: ['predictions'] })
       qc.invalidateQueries({ queryKey: ['events'] })
       qc.invalidateQueries({ queryKey: ['news'] })
+      qc.invalidateQueries({ queryKey: ['profile'] })
       qc.invalidateQueries({ queryKey: ['history'] })
       qc.invalidateQueries({ queryKey: ['global'] })
     },
@@ -36,6 +37,8 @@ export function useSimulateBatch() {
     onSuccess: (_data, days) => {
       toast.success(`Simulated ${days} days`)
       qc.invalidateQueries({ queryKey: ['predictions'] })
+      qc.invalidateQueries({ queryKey: ['news'] })
+      qc.invalidateQueries({ queryKey: ['profile'] })
       qc.invalidateQueries({ queryKey: ['history'] })
       qc.invalidateQueries({ queryKey: ['global'] })
     },
