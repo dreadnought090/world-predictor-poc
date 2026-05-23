@@ -114,6 +114,28 @@ async def test_simulate(client):
     assert "metrics" in data
     assert "reactions" in data
     assert "all_countries" in data
+    assert data["all_countries"]["US"]["agent_count"] > 0
+
+
+@pytest.mark.asyncio
+async def test_simulate_rejects_invalid_news_payload(client):
+    payload = [
+        {
+            "title": "Impossible impact",
+            "source": {"name": "Reuters", "politics": 0.0, "credibility": 0.9},
+            "category": "ECONOMIC_POLICY",
+            "region": "US",
+            "impact": 2.0,
+        }
+    ]
+    resp = await client.post("/simulate", json=payload)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_batch_days_validation(client):
+    resp = await client.post("/simulate/batch?days=0")
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -130,3 +152,54 @@ async def test_news_archive(client):
     assert resp.status_code == 200
     data = resp.json()
     assert "stats" in data
+
+
+@pytest.mark.asyncio
+async def test_market_signals_frontend_contract(client, monkeypatch):
+    from datetime import datetime, timezone
+    from world_predictor.data.market import MarketDataFetcher
+
+    def fake_fetch_exchange_rates(self, base="USD"):
+        self._last_fetch = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        return {"USD": 1.0, "EUR": 0.8, "JPY": 160.0}
+
+    monkeypatch.setattr(MarketDataFetcher, "fetch_exchange_rates", fake_fetch_exchange_rates)
+
+    resp = await client.get("/market/signals")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert set(data) == {"base_currency", "fetched_at", "stale", "signals"}
+    assert data["base_currency"] == "USD"
+    assert data["stale"] is False
+    assert isinstance(data["signals"], list)
+
+    by_country = {signal["country"]: signal for signal in data["signals"]}
+    assert by_country["US"] == {
+        "country": "US",
+        "currency": "USD",
+        "exchange_rate": 1.0,
+        "strength": 0.5,
+    }
+    assert by_country["DE"]["currency"] == "EUR"
+    assert by_country["DE"]["exchange_rate"] == 0.8
+
+
+@pytest.mark.asyncio
+async def test_validation_backtest_endpoint(client):
+    payload = {
+        "event_name": "US Capitol Riot",
+        "lookback_days": 3,
+        "daily_results": [
+            {"US": {"day": 1, "metrics": {"revolution_risk": 0.2}}},
+            {"US": {"day": 2, "metrics": {"revolution_risk": 0.34}}},
+            {"US": {"day": 3, "metrics": {"revolution_risk": 0.55}}},
+        ],
+    }
+    resp = await client.post("/validation/backtest", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["event"]["name"] == "US Capitol Riot"
+    assert data["source"] == "request"
+    assert data["days_evaluated"] == 3
+    assert data["result"]["risk_increase_detected"] is True
+    assert data["summary"]["total_events"] == 1

@@ -1,9 +1,9 @@
+import { lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { useAllPredictions } from '../api/queries'
 import ThreatLevel from '../components/dashboard/ThreatLevel'
 import GlobalMetricsStrip from '../components/dashboard/GlobalMetricsStrip'
 import TheWire from '../components/dashboard/TheWire'
-import GlobeMap from '../components/dashboard/GlobeMap'
 import CountryTable from '../components/dashboard/CountryTable'
 import MarketSignals from '../components/dashboard/MarketSignals'
 import SpilloverGraph from '../components/dashboard/SpilloverGraph'
@@ -11,6 +11,8 @@ import ActiveEventsList from '../components/events/ActiveEventsList'
 import NewsFeed from '../components/news/NewsFeed'
 import { SkeletonCard, SkeletonTable } from '../components/common/Skeleton'
 import { downloadCSV } from '../utils/export'
+
+const GlobeMap = lazy(() => import('../components/dashboard/GlobeMap'))
 
 export default function DashboardPage() {
   const { data, isLoading } = useAllPredictions()
@@ -44,7 +46,13 @@ export default function DashboardPage() {
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Global Stability Map</h3>
             <span className="font-mono text-xs text-slate-500">Day {maxDay}</span>
           </div>
-          {isLoading ? <div className="h-[380px] animate-pulse bg-surface2 rounded-xl" /> : <GlobeMap data={predictions} />}
+          {isLoading ? (
+            <div className="h-[380px] animate-pulse bg-surface2 rounded-xl" />
+          ) : (
+            <Suspense fallback={<div className="h-[380px] animate-pulse bg-surface2 rounded-xl" />}>
+              <GlobeMap data={predictions} />
+            </Suspense>
+          )}
         </div>
         <div className="flex flex-col gap-4">
           <div className="glass p-4 flex-1">

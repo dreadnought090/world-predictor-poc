@@ -95,6 +95,9 @@ class Backtester:
                 risk = day_data[country].get("metrics", {}).get("revolution_risk", 0)
                 risk_series.append(risk)
 
+        if lookback_days > 0:
+            risk_series = risk_series[-lookback_days:]
+
         if not risk_series:
             return ValidationResult(
                 event_name=event.name, country=country,
@@ -185,6 +188,16 @@ class Backtester:
                 "date": e.date,
                 "type": e.event_type,
                 "severity": e.actual_impact,
+                "description": e.description,
             }
             for e in HISTORICAL_EVENTS
         ]
+
+    @staticmethod
+    def find_historical_event(name: str) -> Optional[HistoricalEvent]:
+        """Find a historical event by exact or case-insensitive name."""
+        normalized = name.strip().lower()
+        for event in HISTORICAL_EVENTS:
+            if event.name == name or event.name.lower() == normalized:
+                return event
+        return None

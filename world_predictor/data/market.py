@@ -5,8 +5,8 @@ simulation as additional economic signals. Uses free APIs.
 """
 
 import logging
-from typing import Dict, Optional, List
-from datetime import datetime
+from typing import Any, Dict, Optional
+from datetime import datetime, timezone
 
 import requests
 
@@ -33,7 +33,7 @@ class MarketDataFetcher:
     """Fetch market data from free APIs."""
 
     def __init__(self):
-        self._cache: Dict[str, Dict] = {}
+        self._cache: Dict[str, Dict[str, float]] = {}
         self._last_fetch: Optional[datetime] = None
 
     def fetch_exchange_rates(self, base: str = "USD") -> Dict[str, float]:
@@ -51,13 +51,18 @@ class MarketDataFetcher:
             if data.get("result") == "success":
                 rates = data.get("rates", {})
                 self._cache["exchange_rates"] = rates
-                self._last_fetch = datetime.now()
+                self._last_fetch = datetime.now(timezone.utc)
                 return rates
         except Exception as e:
             logger.warning("Exchange rate fetch failed: %s", e)
         return self._cache.get("exchange_rates", {})
 
-    def get_economic_signal(self, country: str, rates: Dict[str, float]) -> Dict[str, float]:
+    @property
+    def last_fetch_at(self) -> Optional[str]:
+        """ISO timestamp for the last successful remote market fetch."""
+        return self._last_fetch.isoformat() if self._last_fetch else None
+
+    def get_economic_signal(self, country: str, rates: Dict[str, float]) -> Dict[str, Any]:
         """Convert market data into economic signals for the simulation.
 
         Returns normalized signals that can be fed into the engine:
@@ -99,7 +104,7 @@ class MarketDataFetcher:
             "exchange_rate": current_rate,
         }
 
-    def get_all_signals(self) -> Dict[str, Dict[str, float]]:
+    def get_all_signals(self) -> Dict[str, Dict[str, Any]]:
         """Fetch rates and return economic signals for all countries."""
         rates = self.fetch_exchange_rates()
         signals = {}

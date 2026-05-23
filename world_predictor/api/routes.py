@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from typing import List
 
 from world_predictor.simulation.engine import SimulationEngine
 from world_predictor.data.agents import AgentGenerator
 from world_predictor.api.container import get_simulation_engine, get_agent_generator
+from world_predictor.api.models import NewsItemInput, SimulationResult
 
 router = APIRouter()
 
 
-@router.post("/simulate")
+@router.post("/simulate", response_model=SimulationResult)
 async def simulate(
-    news_items: List[dict],
+    news_items: List[NewsItemInput],
     engine: SimulationEngine = Depends(get_simulation_engine),
 ):
     """Run a simulation with provided news items (processes all countries)."""
@@ -18,20 +19,20 @@ async def simulate(
 
     items = []
     for ni in news_items:
-        source_data = ni.get("source", {})
+        source_data = ni.source
         source = NewsSource(
-            name=source_data.get("name", "Unknown"),
-            politics=source_data.get("politics", 0.0),
-            credibility=source_data.get("credibility", 0.5),
+            name=source_data.name,
+            politics=source_data.politics,
+            credibility=source_data.credibility,
         )
         item = NewsItem(
-            title=ni.get("title", ""),
+            title=ni.title,
             source=source,
-            category=ni.get("category", "GENERAL"),
-            content=ni.get("content", ""),
-            url=ni.get("url", ""),
-            region=ni.get("region", "Global"),
-            impact=ni.get("impact", 0.1),
+            category=ni.category,
+            content=ni.content,
+            url=ni.url,
+            region=ni.region,
+            impact=ni.impact,
         )
         items.append(item)
 
@@ -47,7 +48,14 @@ async def simulate(
         "agent_updates": engine.engines[first_country["country"]].get_agent_updates()
         if first_country.get("country") in engine.engines else [],
         "all_countries": {
-            country: {"day": r["day"], "metrics": r["metrics"], "reactions": r["reactions"]}
+            country: {
+                "country": country,
+                "day": r["day"],
+                "metrics": r["metrics"],
+                "consensus": r["consensus"],
+                "reactions": r["reactions"],
+                "agent_count": r["agent_count"],
+            }
             for country, r in results.items()
         },
     }
@@ -58,6 +66,7 @@ async def get_status(engine: SimulationEngine = Depends(get_simulation_engine)):
     """Get current simulation status for all countries."""
     return {
         "status": "running",
+        "metadata": engine.metadata,
         "countries": {
             code: {"day": e.current_day, "agent_count": len(e.agents)}
             for code, e in engine.engines.items()
@@ -68,8 +77,8 @@ async def get_status(engine: SimulationEngine = Depends(get_simulation_engine)):
 
 @router.post("/agents/generate")
 async def generate_agents(
-    country: str,
-    count: int = 1000,
+    country: str = Query(min_length=2, max_length=2),
+    count: int = Query(default=1000, ge=1, le=10000),
     generator: AgentGenerator = Depends(get_agent_generator),
 ):
     """Generate agents for a specific country."""

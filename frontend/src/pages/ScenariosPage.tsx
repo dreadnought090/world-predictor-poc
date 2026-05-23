@@ -4,17 +4,16 @@ import { usePresetEvents, usePresetPolicies } from '../api/queries'
 import { useRunScenario } from '../api/mutations'
 import { COUNTRIES } from '../constants/countries'
 import ScenarioComparePage from './ScenarioComparePage'
+import type { Metrics, ScenarioResult } from '../types'
+
+const metricValue = (metrics: Partial<Metrics> | undefined, key: keyof Metrics) => {
+  const value = metrics?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
-
-interface ScenarioResult {
-  name: string
-  scenario_id: string
-  days_simulated: number
-  events_injected: string[]
-  policies_injected: string[]
-  final_state: Record<string, any>
-}
+const avg = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0
+const riskColor = (risk: number) => risk >= 0.6 ? '#ef4444' : risk >= 0.4 ? '#f59e0b' : '#22c55e'
 
 export default function ScenariosPage() {
   const { data: events } = usePresetEvents()
@@ -30,13 +29,14 @@ export default function ScenariosPage() {
   const [showCompare, setShowCompare] = useState(false)
 
   const handleRun = () => {
-    if (!name) return
+    const scenarioName = name.trim()
+    if (!scenarioName) return
     runScenario.mutate({
-      name,
+      name: scenarioName,
       description: `Event: ${event || 'none'}, Policy: ${policy || 'none'} in ${policyCountry}`,
       preset_event: event || undefined,
       preset_policy: policy || undefined,
-      policy_country: policyCountry,
+      policy_country: policy ? policyCountry : undefined,
       days,
     }, {
       onSuccess: (data) => {
@@ -46,6 +46,20 @@ export default function ScenariosPage() {
   }
 
   const result = runScenario.data
+  const resultRows = Object.entries(result?.final_state ?? {}).map(([code, metrics]) => {
+    const risk = metricValue(metrics, 'revolution_risk')
+    return {
+      code,
+      optimism: metricValue(metrics, 'average_optimism'),
+      trust: metricValue(metrics, 'social_cohesion'),
+      stability: metricValue(metrics, 'political_stability'),
+      risk,
+    }
+  }).sort((left, right) => right.risk - left.risk)
+  const averageRisk = avg(resultRows.map(row => row.risk))
+  const averageOptimism = avg(resultRows.map(row => row.optimism))
+  const highRiskCount = resultRows.filter(row => row.risk >= 0.4).length
+  const peakRisk = resultRows[0]
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4">
@@ -64,6 +78,12 @@ export default function ScenariosPage() {
           </button>
         )}
       </div>
+
+      {runScenario.isError && (
+        <div className="glass p-4 border border-red-500/30 text-sm text-red-300">
+          {runScenario.error?.message || 'Scenario failed'}
+        </div>
+      )}
 
       <div className="glass p-5">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-4">Configure What-If Scenario</h3>
@@ -99,7 +119,7 @@ export default function ScenariosPage() {
           <div className="flex items-end">
             <button
               onClick={handleRun}
-              disabled={!name || runScenario.isPending}
+              disabled={!name.trim() || runScenario.isPending}
               className="px-6 py-2.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-accent to-blue-700 text-white hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all disabled:opacity-50 w-full"
             >
               {runScenario.isPending ? 'Running...' : 'Run Scenario'}
@@ -114,7 +134,7 @@ export default function ScenariosPage() {
           <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Scenario History</h3>
           <div className="flex flex-wrap gap-2">
             {history.map((s, i) => (
-              <div key={i} className="bg-bg2 rounded-lg px-3 py-2 text-xs">
+              <div key={s.scenario_id} className="bg-bg2 rounded-lg px-3 py-2 text-xs">
                 <span className="font-semibold text-accent2">#{i + 1}</span>
                 <span className="text-slate-300 ml-1.5">{s.name}</span>
                 <span className="text-slate-500 ml-1.5">{s.days_simulated}d</span>
@@ -145,6 +165,22 @@ export default function ScenariosPage() {
           {result.policies_injected?.length > 0 && (
             <div className="text-xs text-purple2 mb-2">Policies: {result.policies_injected.join(', ')}</div>
           )}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            {[
+              { label: 'Avg Risk', value: pct(averageRisk), color: riskColor(averageRisk) },
+              { label: 'Elevated Risk', value: `${highRiskCount}/${resultRows.length}`, color: highRiskCount > 0 ? '#f59e0b' : '#22c55e' },
+              { label: 'Peak Risk', value: peakRisk ? `${peakRisk.code} ${pct(peakRisk.risk)}` : 'n/a', color: peakRisk ? riskColor(peakRisk.risk) : '#64748b' },
+              { label: 'Avg Optimism', value: pct(averageOptimism), color: '#60a5fa' },
+            ].map(item => (
+              <div key={item.label} className="bg-bg2 rounded-lg p-3">
+                <div className="text-lg font-bold font-mono" style={{ color: item.color }}>{item.value}</div>
+                <div className="text-[9px] text-slate-500 uppercase mt-1">{item.label}</div>
+              </div>
+            ))}
+          </div>
+          {resultRows.length === 0 ? (
+            <div className="text-xs text-slate-500 text-center py-6">No country metrics returned.</div>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -157,18 +193,19 @@ export default function ScenariosPage() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(result.final_state || {}).map(([code, m]: [string, any]) => (
-                  <tr key={code} className="border-b border-border/40">
-                    <td className="px-3 py-2"><span className="mr-1">{COUNTRIES[code]?.flag}</span>{code}</td>
-                    <td className="px-3 py-2 font-mono">{pct(m.average_optimism || 0)}</td>
-                    <td className="px-3 py-2 font-mono">{pct(m.social_cohesion || 0)}</td>
-                    <td className="px-3 py-2 font-mono">{pct(m.political_stability || 0)}</td>
-                    <td className="px-3 py-2 font-mono">{pct(m.revolution_risk || 0)}</td>
+                {resultRows.map(row => (
+                  <tr key={row.code} className="border-b border-border/40">
+                    <td className="px-3 py-2"><span className="mr-1">{COUNTRIES[row.code]?.flag}</span>{row.code}</td>
+                    <td className="px-3 py-2 font-mono">{pct(row.optimism)}</td>
+                    <td className="px-3 py-2 font-mono">{pct(row.trust)}</td>
+                    <td className="px-3 py-2 font-mono">{pct(row.stability)}</td>
+                    <td className="px-3 py-2 font-mono font-semibold" style={{ color: riskColor(row.risk) }}>{pct(row.risk)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
     </motion.div>

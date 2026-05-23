@@ -5,9 +5,7 @@ import type { Prediction } from '../../types'
 // Lazy-load Plotly to avoid blocking initial render
 import createPlotlyComponentModule from 'react-plotly.js/factory'
 import PlotlyModule from 'plotly.js-geo-dist'
-const createPlotlyComponent = (createPlotlyComponentModule as any).default || createPlotlyComponentModule
-const Plotly = (PlotlyModule as any).default || PlotlyModule
-const Plot = createPlotlyComponent(Plotly)
+const Plot = createPlotlyComponentModule(PlotlyModule)
 
 export default function GlobeMap({ data }: { data: Record<string, Prediction> }) {
   const navigate = useNavigate()

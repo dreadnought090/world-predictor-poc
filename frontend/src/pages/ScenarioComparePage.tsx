@@ -1,21 +1,30 @@
+import { Fragment } from 'react'
 import { motion } from 'framer-motion'
 import { COUNTRIES } from '../constants/countries'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, RadarChart, PolarGrid, PolarAngleAxis, Radar, Legend } from 'recharts'
+import type { Metrics, ScenarioResult } from '../types'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
-const delta = (a: number, b: number) => {
+const delta = (a: number, b: number, higherIsWorse = false) => {
   const d = (b - a) * 100
   const sign = d > 0 ? '+' : ''
-  return { text: `${sign}${d.toFixed(1)}%`, color: d > 0 ? '#22c55e' : d < 0 ? '#ef4444' : '#64748b' }
+  const color = d === 0 ? '#64748b' : d > 0 === higherIsWorse ? '#ef4444' : '#22c55e'
+  return { text: `${sign}${d.toFixed(1)}%`, color }
 }
 
-interface ScenarioResult {
-  name: string
-  scenario_id: string
-  days_simulated: number
-  events_injected: string[]
-  policies_injected: string[]
-  final_state: Record<string, any>
+const metrics = ['average_optimism', 'social_cohesion', 'political_stability', 'revolution_risk'] as const
+type ScenarioMetric = typeof metrics[number]
+
+const metricLabels: Record<ScenarioMetric, string> = {
+  average_optimism: 'Optimism',
+  social_cohesion: 'Trust',
+  political_stability: 'Stability',
+  revolution_risk: 'Rev. Risk',
+}
+
+function metricValue(metricsByCountry: Partial<Metrics> | undefined, metric: ScenarioMetric) {
+  const value = metricsByCountry?.[metric]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 export default function ScenarioComparePage({ scenarios }: { scenarios: ScenarioResult[] }) {
@@ -30,28 +39,30 @@ export default function ScenarioComparePage({ scenarios }: { scenarios: Scenario
 
   const a = scenarios[scenarios.length - 2]
   const b = scenarios[scenarios.length - 1]
-  const countries = Object.keys(a.final_state || {}).filter(c => b.final_state?.[c])
+  const countries = Object.keys(a.final_state ?? {})
+    .filter(c => b.final_state?.[c])
+    .sort((left, right) => left.localeCompare(right))
 
-  const metrics = ['average_optimism', 'social_cohesion', 'political_stability', 'revolution_risk'] as const
-  const metricLabels: Record<string, string> = {
-    average_optimism: 'Optimism',
-    social_cohesion: 'Trust',
-    political_stability: 'Stability',
-    revolution_risk: 'Rev. Risk',
+  if (countries.length === 0) {
+    return (
+      <div className="glass p-8 text-center">
+        <p className="text-slate-400 text-sm">No comparable country metrics found.</p>
+      </div>
+    )
   }
 
   // Radar data: average across all countries per metric
-  const n = countries.length || 1
+  const n = countries.length
   const radarData = metrics.map(m => ({
     metric: metricLabels[m],
-    [a.name]: +(countries.reduce((s, c) => s + (a.final_state[c]?.[m] || 0), 0) / n * 100).toFixed(1),
-    [b.name]: +(countries.reduce((s, c) => s + (b.final_state[c]?.[m] || 0), 0) / n * 100).toFixed(1),
+    [a.name]: +(countries.reduce((s, c) => s + metricValue(a.final_state[c], m), 0) / n * 100).toFixed(1),
+    [b.name]: +(countries.reduce((s, c) => s + metricValue(b.final_state[c], m), 0) / n * 100).toFixed(1),
   }))
 
   // Delta bar chart: show revolution risk delta per country
   const deltaData = countries.map(c => {
-    const riskA = a.final_state[c]?.revolution_risk || 0
-    const riskB = b.final_state[c]?.revolution_risk || 0
+    const riskA = metricValue(a.final_state[c], 'revolution_risk')
+    const riskB = metricValue(b.final_state[c], 'revolution_risk')
     return { country: c, flag: COUNTRIES[c]?.flag || '', delta: +((riskB - riskA) * 100).toFixed(1) }
   }).sort((x, y) => y.delta - x.delta)
 
@@ -94,11 +105,11 @@ export default function ScenarioComparePage({ scenarios }: { scenarios: Scenario
         </h3>
         <ResponsiveContainer width="100%" height={Math.max(200, deltaData.length * 28)}>
           <BarChart data={deltaData} layout="vertical" margin={{ left: 50 }}>
-            <XAxis type="number" tickFormatter={v => `${v > 0 ? '+' : ''}${v}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
+            <XAxis type="number" tickFormatter={v => `${Number(v) > 0 ? '+' : ''}${v}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
             <YAxis type="category" dataKey="country" tick={{ fill: '#94a3b8', fontSize: 10 }} width={40} />
             <Tooltip
               contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
-              formatter={(v: any) => [`${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(1)}%`, 'Risk Change']}
+              formatter={(v: unknown): [string, string] => [`${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(1)}%`, 'Risk Change']}
             />
             <Bar dataKey="delta" radius={[0, 4, 4, 0]}>
               {deltaData.map((d, i) => <Cell key={i} fill={d.delta > 0 ? '#ef4444' : '#22c55e'} />)}
@@ -122,11 +133,11 @@ export default function ScenarioComparePage({ scenarios }: { scenarios: Scenario
               <tr>
                 <th className="border-b border-border/50" />
                 {metrics.map(m => (
-                  <React.Fragment key={m}>
+                  <Fragment key={m}>
                     <th className="text-center px-1 py-1 text-[8px] text-blue-400 border-b border-border/50">A</th>
                     <th className="text-center px-1 py-1 text-[8px] text-purple-400 border-b border-border/50">B</th>
-                    <th className="text-center px-1 py-1 text-[8px] text-slate-500 border-b border-border/50">Δ</th>
-                  </React.Fragment>
+                    <th className="text-center px-1 py-1 text-[8px] text-slate-500 border-b border-border/50">Delta</th>
+                  </Fragment>
                 ))}
               </tr>
             </thead>
@@ -135,15 +146,15 @@ export default function ScenarioComparePage({ scenarios }: { scenarios: Scenario
                 <tr key={c} className="border-b border-border/20 hover:bg-white/[0.02]">
                   <td className="px-2 py-1.5">{COUNTRIES[c]?.flag} {c}</td>
                   {metrics.map(m => {
-                    const va = a.final_state[c]?.[m] || 0
-                    const vb = b.final_state[c]?.[m] || 0
-                    const d = delta(va, vb)
+                    const va = metricValue(a.final_state[c], m)
+                    const vb = metricValue(b.final_state[c], m)
+                    const d = delta(va, vb, m === 'revolution_risk')
                     return (
-                      <React.Fragment key={m}>
+                      <Fragment key={m}>
                         <td className="text-center px-1 py-1.5 font-mono text-blue-300">{pct(va)}</td>
                         <td className="text-center px-1 py-1.5 font-mono text-purple-300">{pct(vb)}</td>
                         <td className="text-center px-1 py-1.5 font-mono font-bold" style={{ color: d.color }}>{d.text}</td>
-                      </React.Fragment>
+                      </Fragment>
                     )
                   })}
                 </tr>
@@ -155,6 +166,3 @@ export default function ScenarioComparePage({ scenarios }: { scenarios: Scenario
     </motion.div>
   )
 }
-
-// Need React import for fragments
-import React from 'react'

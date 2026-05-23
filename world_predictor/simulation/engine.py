@@ -9,8 +9,13 @@ Manages multi-country agent simulation with:
 - Persistence via SQLite
 """
 
+import hashlib
+import json
 import random
+import uuid
 import logging
+import threading
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from collections import Counter
 
@@ -310,7 +315,18 @@ class SimulationEngine:
         self.inter_country = InterCountryDynamics()
         self.institutions: Dict[str, List[Institution]] = {}
         self.scenario_engine = None  # lazy init
+        self._lock = threading.RLock()
         cfg = sim_config()
+        self.run_id = str(uuid.uuid4())
+        self.initialized_at = datetime.now(timezone.utc).isoformat()
+        self.random_seed = cfg.get("random_seed")
+        self.config_digest = hashlib.sha256(
+            json.dumps(cfg, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:12]
+
+        if self.random_seed is not None:
+            random.seed(int(self.random_seed))
+            np.random.seed(int(self.random_seed))
 
         if agents:
             # Legacy: single-country mode (backward compatible)
@@ -321,10 +337,94 @@ class SimulationEngine:
             # Multi-country: generate agents for all configured countries
             for country in cfg.get("countries", ["US"]):
                 count = cfg.get("agents_per_country", 1000)
-                country_agents = self._generator.generate_agents_for_country(country, count)
-                self.engines[country] = CountryEngine(country, country_agents)
+                restored = self._restore_country_engine(country)
+                if restored:
+                    self.engines[country] = restored
+                    logger.info(
+                        "Restored %d agents for %s at day %d",
+                        len(restored.agents), country, restored.current_day,
+                    )
+                else:
+                    country_agents = self._generator.generate_agents_for_country(country, count)
+                    self.engines[country] = CountryEngine(country, country_agents)
+                    logger.info("Initialized %d agents for %s", count, country)
                 self.institutions[country] = create_default_institutions(country)
-                logger.info("Initialized %d agents for %s", count, country)
+
+    @property
+    def metadata(self) -> Dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "initialized_at": self.initialized_at,
+            "random_seed": self.random_seed,
+            "config_digest": self.config_digest,
+        }
+
+    def _restore_country_engine(self, country: str) -> Optional[CountryEngine]:
+        """Restore a country's agents from SQLite if a checkpoint exists."""
+        if not self.db:
+            return None
+        saved = self.db.get_simulation_state(country)
+        if not saved or not saved.get("state_json"):
+            return None
+
+        try:
+            state = json.loads(saved["state_json"])
+            if state.get("config_digest") != self.config_digest:
+                logger.info(
+                    "Ignoring saved state for %s because config digest changed",
+                    country,
+                )
+                return None
+            agents = [
+                Agent(
+                    id=a["id"],
+                    demographics=dict(a["demographics"]),
+                    economic=dict(a["economic"]),
+                    behavior=dict(a["behavior"]),
+                    location=a.get("location", country),
+                    politics=float(a["politics"]),
+                    iq=int(a.get("iq", a.get("demographics", {}).get("iq", 100))),
+                )
+                for a in state.get("agents", [])
+            ]
+            if not agents:
+                return None
+            engine = CountryEngine(country, agents)
+            engine.current_day = int(saved.get("current_day") or state.get("current_day") or 0)
+            baselines = state.get("baselines", {})
+            if "optimism" in baselines:
+                engine._baseline_optimism = float(baselines["optimism"])
+            if "trust" in baselines:
+                engine._baseline_trust = float(baselines["trust"])
+            return engine
+        except Exception as exc:
+            logger.warning("Failed to restore simulation state for %s: %s", country, exc)
+            return None
+
+    def _serialize_country_engine(self, engine: CountryEngine) -> Dict[str, Any]:
+        """Serialize mutable agent state for restart recovery."""
+        return {
+            "run_id": self.run_id,
+            "random_seed": self.random_seed,
+            "config_digest": self.config_digest,
+            "current_day": engine.current_day,
+            "baselines": {
+                "optimism": float(engine._baseline_optimism),
+                "trust": float(engine._baseline_trust),
+            },
+            "agents": [
+                {
+                    "id": a.id,
+                    "demographics": dict(a.demographics),
+                    "economic": dict(a.economic),
+                    "behavior": dict(a.behavior),
+                    "location": a.location,
+                    "politics": float(a.politics),
+                    "iq": int(a.iq),
+                }
+                for a in engine.agents
+            ],
+        }
 
     @property
     def state(self):
@@ -352,6 +452,11 @@ class SimulationEngine:
 
     def process_day(self, news_items: List[NewsItem]) -> Dict[str, Any]:
         """Process a day for all countries with events, institutions, and spillover."""
+        with self._lock:
+            return self._process_day_locked(news_items)
+
+    def _process_day_locked(self, news_items: List[NewsItem]) -> Dict[str, Any]:
+        """Process a day while the simulation state lock is held."""
         results: Dict[str, Any] = {}
 
         for country, engine in self.engines.items():
@@ -384,6 +489,13 @@ class SimulationEngine:
                 self.db.save_daily_metrics(
                     country, result["day"], result["metrics"],
                     result["reactions"], result["consensus"],
+                    commit=False,
+                )
+                self.db.save_simulation_state(
+                    country,
+                    result["day"],
+                    len(engine.agents),
+                    self._serialize_country_engine(engine),
                     commit=False,
                 )
 
@@ -421,17 +533,19 @@ class SimulationEngine:
 
     def inject_event(self, event: GeoEvent):
         """Inject a geopolitical event into the simulation."""
-        current_day = next(iter(self.engines.values())).current_day if self.engines else 0
-        self.event_manager.inject_event(event, current_day)
+        with self._lock:
+            current_day = next(iter(self.engines.values())).current_day if self.engines else 0
+            self.event_manager.inject_event(event, current_day)
 
     def enact_policy(self, country: str, policy):
         """Enact a policy via a country's institution."""
-        if country in self.institutions:
-            for inst in self.institutions[country]:
-                if inst.institution_type == "GOVERNMENT":
-                    inst.enact_policy(policy)
-                    return
-        logger.warning("No government institution for %s", country)
+        with self._lock:
+            if country in self.institutions:
+                for inst in self.institutions[country]:
+                    if inst.institution_type == "GOVERNMENT":
+                        inst.enact_policy(policy)
+                        return
+            logger.warning("No government institution for %s", country)
 
     def _apply_event_effects(self, engine: CountryEngine, effects: Dict[str, float]):
         """Apply event effects to all agents."""
@@ -477,37 +591,47 @@ class SimulationEngine:
 
     def process_day_single(self, country: str, news_items: List[NewsItem]) -> Dict[str, Any]:
         """Process a day for a single country."""
-        if country not in self.engines:
-            raise ValueError(f"Country {country} not loaded")
-        result = self.engines[country].process_day(news_items)
-        if self.db:
-            self.db.save_daily_metrics(
-                country, result["day"], result["metrics"],
-                result["reactions"], result["consensus"],
-            )
-        return result
+        with self._lock:
+            if country not in self.engines:
+                raise ValueError(f"Country {country} not loaded")
+            result = self.engines[country].process_day(news_items)
+            if self.db:
+                self.db.save_daily_metrics(
+                    country, result["day"], result["metrics"],
+                    result["reactions"], result["consensus"],
+                    commit=False,
+                )
+                self.db.save_simulation_state(
+                    country,
+                    result["day"],
+                    len(self.engines[country].agents),
+                    self._serialize_country_engine(self.engines[country]),
+                    commit=False,
+                )
+                self.db.flush()
+            return result
 
     def get_predictions(self, country: str) -> Dict[str, Any]:
         """Get current predictions for a country (real metrics, not dummy)."""
-        if country not in self.engines:
-            return {"error": f"Country {country} not loaded"}
-        engine = self.engines[country]
-        metrics = engine._calculate_metrics()
-        risk = engine._calculate_revolution_risk(metrics, engine.reaction_history.get(engine.current_day, {}))
-        metrics["revolution_risk"] = risk
-        return {
-            "country": country,
-            "day": engine.current_day,
-            "agent_count": len(engine.agents),
-            "metrics": metrics,
-        }
+        with self._lock:
+            if country not in self.engines:
+                return {"error": f"Country {country} not loaded"}
+            engine = self.engines[country]
+            metrics = engine._calculate_metrics()
+            risk = engine._calculate_revolution_risk(metrics, engine.reaction_history.get(engine.current_day, {}))
+            metrics["revolution_risk"] = risk
+            return {
+                "country": country,
+                "day": engine.current_day,
+                "agent_count": len(engine.agents),
+                "run_id": self.run_id,
+                "metrics": metrics,
+            }
 
     def get_all_predictions(self) -> Dict[str, Any]:
         """Get predictions for all countries."""
-        predictions = {}
-        for country in self.engines:
-            predictions[country] = self.get_predictions(country)
-        return predictions
+        with self._lock:
+            return {country: self.get_predictions(country) for country in self.engines}
 
     def simulate_batch(self, news_items: List[NewsItem], days: int = 10) -> List[Dict[str, Any]]:
         """Run multiple days of simulation."""
