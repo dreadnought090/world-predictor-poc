@@ -1,38 +1,55 @@
+import { useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { COUNTRIES } from '../../constants/countries'
 import type { Prediction } from '../../types'
-
-// Lazy-load Plotly to avoid blocking initial render
-import createPlotlyComponentModule from 'react-plotly.js/factory'
 import PlotlyModule from 'plotly.js-geo-dist'
-const Plot = createPlotlyComponentModule(PlotlyModule)
+
+type PlotRecord = Record<string, unknown>
+type PlotlyClickEvent = { points?: Array<{ customdata?: unknown }> }
+type PlotlyElement = HTMLDivElement & {
+  on?: (event: 'plotly_click', handler: (event: PlotlyClickEvent) => void) => void
+  removeListener?: (event: 'plotly_click', handler: (event: PlotlyClickEvent) => void) => void
+}
+type PlotlyApi = {
+  react: (
+    element: HTMLElement,
+    data: PlotRecord[],
+    layout: PlotRecord,
+    config: PlotRecord,
+  ) => Promise<unknown> | void
+  purge: (element: HTMLElement) => void
+}
+
+const Plotly = PlotlyModule as PlotlyApi
+const PLOT_CONFIG: PlotRecord = { responsive: true, displayModeBar: false }
 
 export default function GlobeMap({ data }: { data: Record<string, Prediction> }) {
   const navigate = useNavigate()
-  const entries = Object.entries(data)
+  const plotRef = useRef<PlotlyElement | null>(null)
 
-  const lats: number[] = []
-  const lons: number[] = []
-  const texts: string[] = []
-  const colors: number[] = []
-  const sizes: number[] = []
-  const ids: string[] = []
+  const figure = useMemo(() => {
+    const entries = Object.entries(data)
+    const lats: number[] = []
+    const lons: number[] = []
+    const texts: string[] = []
+    const colors: number[] = []
+    const sizes: number[] = []
+    const ids: string[] = []
 
-  entries.forEach(([code, pred]) => {
-    const c = COUNTRIES[code]
-    if (!c) return
-    const risk = pred.metrics.revolution_risk ?? 0
-    lats.push(c.coords[0])
-    lons.push(c.coords[1])
-    texts.push(`<b>${c.flag} ${c.name}</b><br>Risk: ${(risk * 100).toFixed(1)}%<br>Optimism: ${(pred.metrics.average_optimism * 100).toFixed(1)}%`)
-    colors.push(risk)
-    sizes.push(14 + risk * 26)
-    ids.push(code)
-  })
+    entries.forEach(([code, pred]) => {
+      const c = COUNTRIES[code]
+      if (!c) return
+      const risk = pred.metrics.revolution_risk ?? 0
+      lats.push(c.coords[0])
+      lons.push(c.coords[1])
+      texts.push(`<b>${c.flag} ${c.name}</b><br>Risk: ${(risk * 100).toFixed(1)}%<br>Optimism: ${(pred.metrics.average_optimism * 100).toFixed(1)}%`)
+      colors.push(risk)
+      sizes.push(14 + risk * 26)
+      ids.push(code)
+    })
 
-  return (
-    <Plot
-      data={[{
+    return {
+      data: [{
         type: 'scattergeo' as const,
         lat: lats,
         lon: lons,
@@ -50,8 +67,8 @@ export default function GlobeMap({ data }: { data: Record<string, Prediction> })
           opacity: 0.9,
         },
         mode: 'markers' as const,
-      }]}
-      layout={{
+      }] satisfies PlotRecord[],
+      layout: {
         geo: {
           scope: 'world' as const,
           showland: true,
@@ -72,13 +89,27 @@ export default function GlobeMap({ data }: { data: Record<string, Prediction> })
         height: 380,
         font: { color: '#94a3b8' },
         hoverlabel: { bgcolor: '#1a2332', bordercolor: '#334155', font: { family: 'Inter', color: '#f1f5f9', size: 11 } },
-      }}
-      config={{ responsive: true, displayModeBar: false }}
-      onClick={(e: { points: Array<{ customdata: string }> }) => {
-        const code = e.points[0]?.customdata
-        if (code) navigate(`/country/${code}`)
-      }}
-      className="w-full"
-    />
-  )
+      } satisfies PlotRecord,
+    }
+  }, [data])
+
+  useEffect(() => {
+    const element = plotRef.current
+    if (!element) return
+
+    const handleClick = (event: PlotlyClickEvent) => {
+      const code = event.points?.[0]?.customdata
+      if (typeof code === 'string') navigate(`/country/${code}`)
+    }
+
+    Promise.resolve(Plotly.react(element, figure.data, figure.layout, PLOT_CONFIG))
+      .then(() => element.on?.('plotly_click', handleClick))
+
+    return () => {
+      element.removeListener?.('plotly_click', handleClick)
+      Plotly.purge(element)
+    }
+  }, [figure, navigate])
+
+  return <div ref={plotRef} className="w-full" style={{ height: 380 }} />
 }
