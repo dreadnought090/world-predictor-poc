@@ -62,7 +62,7 @@ Dashboard: globe map, charts, scenario engine
 
 ### Data & Validation
 - **SQLite persistence**: daily_metrics, news_archive, simulation_state (WAL journal mode)
-- **Market data** integration via yfinance
+- **Market data** integration via a free exchange-rate API
 - **Backtesting framework** for validating predictions against historical outcomes
 
 ### React Dashboard
@@ -90,12 +90,12 @@ US, CN, IN, BR, RU, JP, DE, GB, FR, KR, AU, MX, ID, NG, EG, SA, TR, PK, PH, TH
 | State | TanStack Query (server), Zustand (UI) |
 | Charts | Recharts, Plotly.js (geo) |
 | Animation | Framer Motion |
-| Market Data | yfinance |
+| Market Data | Exchange-rate API via requests |
 
 ## Quick Start
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.12+ (current dependency pins require Python 3.12 wheels)
 - Node.js 18+
 - [NewsAPI key](https://newsapi.org/) (optional, falls back to RSS)
 - [Anthropic API key](https://console.anthropic.com/) (optional, for news classification)
@@ -108,7 +108,7 @@ git clone https://github.com/dreadnought090/world-predictor-poc.git
 cd world-predictor-poc
 
 # Backend
-pip install -r requirements.txt
+pip install -r requirements-dev.txt  # includes runtime deps + tests
 cp .env.example .env  # Add your API keys
 
 # Frontend
@@ -155,10 +155,10 @@ python main.py
 | POST | `/fetch_news` | Fetch & classify latest news |
 | POST | `/simulate` | Run simulation batch (N days) |
 | POST | `/events/inject` | Inject a geopolitical event |
-| POST | `/institutions/{code}/policy` | Enact a policy for a country |
+| POST | `/policies/enact` | Enact a preset policy for a country |
 | POST | `/scenarios/run` | Run a what-if scenario |
 | GET | `/global/tension` | Global tension index |
-| GET | `/validation/backtest` | Run validation backtest |
+| POST | `/validation/backtest` | Run validation backtest |
 
 ## Project Structure
 
@@ -177,7 +177,7 @@ world-predictor-poc/
 │   │   ├── agents.py                # AgentGenerator (20 countries, real demographics)
 │   │   ├── news.py                  # NewsProcessor (NewsAPI + RSS + Claude classification)
 │   │   ├── database.py              # SQLite persistence layer
-│   │   └── market.py                # Market data (yfinance)
+│   │   └── market.py                # Market data (exchange-rate API)
 │   ├── simulation/
 │   │   ├── engine.py                # SimulationEngine + CountryEngine
 │   │   ├── models.py                # TrustModel, reaction logic, opinion diffusion

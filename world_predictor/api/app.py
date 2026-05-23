@@ -1,9 +1,11 @@
 import os
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import asdict
+from typing import Any, Dict, List, Optional
 
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -16,6 +18,12 @@ from world_predictor.data.news import NewsProcessor
 from world_predictor.data.database import Database
 from world_predictor.api.routes import router
 from world_predictor.api.container import get_simulation_engine
+from world_predictor.api.models import (
+    BacktestRequest,
+    BacktestResponse,
+    HistoricalEventResponse,
+    MarketSignalsResponse,
+)
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -107,6 +115,7 @@ async def api_info():
         "message": "World Predictor API",
         "version": "0.2.0",
         "countries": simulation_engine.countries if simulation_engine else [],
+        "metadata": simulation_engine.metadata if simulation_engine else {},
     }
 
 
@@ -195,7 +204,7 @@ async def fetch_news():
 # ---- Simulation ----
 
 @app.post("/simulate/batch")
-async def simulate_batch(days: int = 10):
+async def simulate_batch(days: int = Query(default=10, ge=1, le=365)):
     """Run multiple days of simulation with current news."""
     if not simulation_engine:
         return {"error": "Engine not initialized"}
@@ -221,7 +230,7 @@ async def simulate_batch(days: int = 10):
 # ---- History ----
 
 @app.get("/history/{country}")
-async def get_history(country: str, days: int = 30):
+async def get_history(country: str, days: int = Query(default=30, ge=1, le=365)):
     """Get historical metrics for a country."""
     if not db:
         return {"error": "Database not initialized"}
@@ -240,7 +249,11 @@ async def get_all_history():
 # ---- News Archive ----
 
 @app.get("/news/archive")
-async def search_news_archive(category: str = None, region: str = None, limit: int = 50):
+async def search_news_archive(
+    category: Optional[str] = Query(default=None, max_length=64),
+    region: Optional[str] = Query(default=None, max_length=16),
+    limit: int = Query(default=50, ge=1, le=200),
+):
     """Search the news archive."""
     if not db:
         return {"error": "Database not initialized"}
@@ -253,7 +266,7 @@ async def search_news_archive(category: str = None, region: str = None, limit: i
 # ---- Agents ----
 
 @app.get("/agents/{country}")
-async def get_agents(country: str, limit: int = 100):
+async def get_agents(country: str, limit: int = Query(default=100, ge=1, le=cfg.get("max_agent_response", 500))):
     """Get agents for a specific country."""
     if simulation_engine and country in simulation_engine.engines:
         agents = simulation_engine.engines[country].agents[:limit]
@@ -443,11 +456,11 @@ async def viz_trends():
 
 @app.post("/events/inject")
 async def inject_event(
-    event_type: str,
-    name: str,
-    affected_countries: str,  # comma-separated
-    magnitude: float = 0.8,
-    duration_days: int = 14,
+    event_type: str = Query(min_length=1, max_length=64),
+    name: str = Query(min_length=1, max_length=120),
+    affected_countries: str = Query(min_length=2, max_length=256),  # comma-separated
+    magnitude: float = Query(default=0.8, ge=0.0, le=1.0),
+    duration_days: int = Query(default=14, ge=1, le=365),
 ):
     """Inject a geopolitical shock event into the simulation."""
     from world_predictor.simulation.events import GeoEvent
@@ -493,8 +506,8 @@ async def get_active_events():
 
 @app.post("/policies/enact")
 async def enact_policy(
-    country: str,
-    policy_name: str,
+    country: str = Query(min_length=2, max_length=2),
+    policy_name: str = Query(min_length=1, max_length=120),
 ):
     """Enact a preset policy in a country."""
     import copy
@@ -551,23 +564,39 @@ async def get_global_tension():
 # ---- Market Data ----
 
 @app.get("/market/signals")
-async def get_market_signals():
+async def get_market_signals() -> MarketSignalsResponse:
     """Get economic signals from real market data."""
     from world_predictor.data.market import MarketDataFetcher
     fetcher = MarketDataFetcher()
-    return fetcher.get_all_signals()
+    raw_signals = fetcher.get_all_signals()
+    signals = []
+    for country, raw in raw_signals.items():
+        exchange_rate = float(raw.get("exchange_rate") or 0.0)
+        signals.append({
+            "country": country,
+            "currency": raw.get("currency_code", "USD"),
+            "exchange_rate": exchange_rate,
+            "strength": raw.get("currency_strength", 0.5),
+        })
+
+    return {
+        "base_currency": "USD",
+        "fetched_at": fetcher.last_fetch_at,
+        "stale": fetcher.last_fetch_at is None,
+        "signals": signals,
+    }
 
 
 # ---- Scenarios ----
 
 @app.post("/scenarios/run")
 async def run_scenario(
-    name: str,
-    description: str = "",
-    preset_event: str = None,
-    preset_policy: str = None,
-    policy_country: str = "US",
-    days: int = 30,
+    name: str = Query(min_length=1, max_length=120),
+    description: str = Query(default="", max_length=1000),
+    preset_event: Optional[str] = Query(default=None, max_length=120),
+    preset_policy: Optional[str] = Query(default=None, max_length=120),
+    policy_country: str = Query(default="US", min_length=2, max_length=2),
+    days: int = Query(default=30, ge=1, le=365),
 ):
     """Run a what-if scenario."""
     import copy
@@ -606,19 +635,24 @@ async def run_scenario(
 
     import asyncio
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, lambda: simulation_engine.scenario_engine.run_scenario(
-        engine=simulation_engine,
-        name=name, description=description,
-        events=events or None,
-        policies=policies or None,
-        news_items=items,
-        days=days,
-    ))
+    def run_locked_scenario():
+        with simulation_engine._lock:
+            return simulation_engine.scenario_engine.run_scenario(
+                engine=simulation_engine,
+                name=name, description=description,
+                events=events or None,
+                policies=policies or None,
+                news_items=items,
+                days=days,
+            )
+
+    result = await loop.run_in_executor(None, run_locked_scenario)
 
     return {
         "scenario_id": result.scenario_id,
         "name": result.name,
         "days_simulated": result.days_simulated,
+        "daily_results": result.daily_results,
         "events_injected": result.events_injected,
         "policies_injected": result.policies_injected,
         "final_state": result.final_state,
@@ -635,11 +669,92 @@ async def compare_scenarios(baseline_id: str, scenario_id: str):
 
 # ---- Validation ----
 
-@app.get("/validation/events")
+@app.get("/validation/events", response_model=List[HistoricalEventResponse])
 async def get_historical_events():
     """Get available historical events for validation."""
     from world_predictor.validation.backtester import Backtester
     return Backtester.get_historical_events()
+
+
+def _event_response(event) -> Dict[str, Any]:
+    return {
+        "name": event.name,
+        "country": event.country,
+        "date": event.date,
+        "type": event.event_type,
+        "severity": event.actual_impact,
+        "description": event.description,
+    }
+
+
+def _history_as_daily_results(country: str, lookback_days: int) -> List[Dict[str, Dict[str, Any]]]:
+    if not db:
+        raise HTTPException(status_code=503, detail="Database not initialized")
+    history = db.get_metrics_history(country, lookback_days)
+    if not history:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No stored metrics history for {country}; run a simulation or provide daily_results.",
+        )
+    metric_keys = {
+        "economic_sentiment", "social_cohesion", "political_stability",
+        "average_optimism", "average_risk_aversion", "revolution_risk",
+    }
+    return [
+        {
+            country: {
+                "day": row.get("day"),
+                "metrics": {k: row[k] for k in metric_keys if k in row and row[k] is not None},
+            }
+        }
+        for row in history
+    ]
+
+
+@app.post("/validation/backtest", response_model=BacktestResponse)
+async def run_backtest(payload: BacktestRequest):
+    """Score supplied scenario/history risk trajectory against a historical event."""
+    from world_predictor.validation.backtester import Backtester
+
+    event = Backtester.find_historical_event(payload.event_name)
+    if not event:
+        raise HTTPException(status_code=404, detail=f"Unknown historical event: {payload.event_name}")
+
+    if payload.daily_results is not None and payload.scenario_id is not None:
+        raise HTTPException(status_code=422, detail="Provide either daily_results or scenario_id, not both")
+
+    source = "history"
+    if payload.daily_results is not None:
+        daily_results = [
+            {country: day.model_dump() for country, day in day_result.items()}
+            for day_result in payload.daily_results
+        ]
+        source = "request"
+    elif payload.scenario_id is not None:
+        if not simulation_engine or not simulation_engine.scenario_engine:
+            raise HTTPException(status_code=404, detail="No scenario results are available")
+        scenario = simulation_engine.scenario_engine.results.get(payload.scenario_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail=f"Scenario not found: {payload.scenario_id}")
+        daily_results = scenario.daily_results
+        source = f"scenario:{payload.scenario_id}"
+    else:
+        daily_results = _history_as_daily_results(event.country, payload.lookback_days)
+
+    backtester = Backtester()
+    result = backtester.validate_scenario(
+        {"daily_results": daily_results},
+        event,
+        lookback_days=payload.lookback_days,
+    )
+
+    return {
+        "event": _event_response(event),
+        "result": asdict(result),
+        "summary": backtester.get_accuracy_summary(),
+        "source": source,
+        "days_evaluated": min(len(daily_results), payload.lookback_days),
+    }
 
 
 @app.get("/presets/events")

@@ -3,14 +3,19 @@ import { motion } from 'framer-motion'
 import { usePresetPolicies } from '../api/queries'
 import { useRunScenario } from '../api/mutations'
 import { COUNTRIES } from '../constants/countries'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import type { Metrics } from '../types'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
+const valueFor = (metrics: Partial<Metrics> | undefined, key: keyof Metrics) => {
+  const value = metrics?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
 
 interface PolicyResult {
   policy: string
   country: string
-  final_state: Record<string, any>
+  final_state: Record<string, Partial<Metrics>>
 }
 
 export default function PolicyWorkshopPage() {
@@ -68,8 +73,8 @@ export default function PolicyWorkshopPage() {
   const comparisonData = results.length === 2
     ? metricKeys.map(k => ({
         metric: metricLabels[k],
-        [results[0].policy]: +(results[0].final_state[country]?.[k] * 100 || 0).toFixed(1),
-        [results[1].policy]: +(results[1].final_state[country]?.[k] * 100 || 0).toFixed(1),
+        [results[0].policy]: +(valueFor(results[0].final_state[country], k) * 100).toFixed(1),
+        [results[1].policy]: +(valueFor(results[1].final_state[country], k) * 100).toFixed(1),
         color: metricColors[k],
       }))
     : []
@@ -130,7 +135,7 @@ export default function PolicyWorkshopPage() {
               <BarChart data={comparisonData}>
                 <XAxis dataKey="metric" tick={{ fill: '#94a3b8', fontSize: 11 }} />
                 <YAxis tickFormatter={v => `${v}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
-                <Tooltip contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} formatter={(v: any) => `${v}%`} />
+                <Tooltip contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} formatter={(v: unknown) => `${v}%`} />
                 <Bar dataKey={results[0].policy} fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 <Bar dataKey={results[1].policy} fill="#a855f7" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -146,8 +151,8 @@ export default function PolicyWorkshopPage() {
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-3">Winner Analysis</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {metricKeys.map(k => {
-                const vA = results[0].final_state[country]?.[k] ?? 0
-                const vB = results[1].final_state[country]?.[k] ?? 0
+                const vA = valueFor(results[0].final_state[country], k)
+                const vB = valueFor(results[1].final_state[country], k)
                 // For revolution_risk, lower is better
                 const aIsBetter = k === 'revolution_risk' ? vA < vB : vA > vB
                 const winner = vA === vB ? 'Tie' : aIsBetter ? results[0].policy : results[1].policy

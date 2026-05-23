@@ -1,6 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import client from './client'
+import type { ScenarioResult, ScenarioRunParams } from '../types'
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+function unwrapApiResult<T>(value: unknown): T {
+  if (isRecord(value) && typeof value.error === 'string') {
+    throw new Error(value.error)
+  }
+  return value as T
+}
 
 export function useFetchNews() {
   const qc = useQueryClient()
@@ -61,12 +72,12 @@ export function useEnactPolicy() {
 }
 
 export function useRunScenario() {
-  return useMutation({
-    mutationFn: (params: { name: string; description?: string; preset_event?: string; preset_policy?: string; policy_country?: string; days?: number }) =>
-      client.post('/scenarios/run', null, { params }).then(r => r.data),
+  return useMutation<ScenarioResult, Error, ScenarioRunParams>({
+    mutationFn: (params) =>
+      client.post('/scenarios/run', null, { params }).then(r => unwrapApiResult<ScenarioResult>(r.data)),
     onSuccess: (_data, params) => {
       toast.success(`Scenario "${params.name}" completed`)
     },
-    onError: () => toast.error('Scenario failed'),
+    onError: (error) => toast.error(error.message || 'Scenario failed'),
   })
 }

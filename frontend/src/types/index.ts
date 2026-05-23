@@ -76,6 +76,22 @@ export interface Relations {
   rivals: Relation[]
 }
 
+export type RelationKind = 'TRADE' | 'ALLIANCE' | 'RIVALRY' | 'SANCTIONS'
+
+export interface RelationEdge {
+  a: string
+  b: string
+  type: RelationKind
+  strength: number
+}
+
+export interface MarketSignal {
+  country: string
+  currency: string
+  exchangeRate: number
+  strength: number
+}
+
 export interface NewsItem {
   title: string
   source_name: string
@@ -118,4 +134,27 @@ export interface PresetPolicy {
   category: string
   magnitude: number
   duration_days: number
+}
+
+export interface ScenarioRunParams {
+  name: string
+  description?: string
+  preset_event?: string
+  preset_policy?: string
+  policy_country?: string
+  days?: number
+}
+
+export interface ScenarioResult {
+  scenario_id: string
+  name: string
+  days_simulated: number
+  daily_results?: Array<Record<string, {
+    day: number
+    metrics: Partial<Metrics>
+    reactions?: Record<string, unknown>
+  }>>
+  events_injected: string[]
+  policies_injected: string[]
+  final_state: Record<string, Partial<Metrics>>
 }

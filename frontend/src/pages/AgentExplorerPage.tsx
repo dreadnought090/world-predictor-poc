@@ -4,28 +4,32 @@ import { motion } from 'framer-motion'
 import { useQuery } from '@tanstack/react-query'
 import { ScatterChart, Scatter, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import client from '../api/client'
-import { COUNTRIES, CHART_COLORS } from '../constants/countries'
+import { COUNTRIES } from '../constants/countries'
 import { SkeletonCard } from '../components/common/Skeleton'
 
+type NumericValue = number | string
+
 interface Agent {
+  id?: string
   demographics: {
-    race: string
-    religion: string
-    education: string
-    age: number
-    iq: number
-    gender: string
+    race?: string
+    religion?: string
+    education?: string
+    age?: NumericValue
+    iq?: NumericValue
+    gender?: string
   }
   economic: {
-    income: number
-    financial_stability: number
+    income?: NumericValue
+    financial_stability?: NumericValue
   }
-  politics: number
+  politics?: NumericValue
   behavior: {
-    optimism: number
-    trust_institutions: number
-    risk_aversion: number
+    optimism?: NumericValue
+    trust_institutions?: NumericValue
+    risk_aversion?: NumericValue
   }
+  iq?: NumericValue
   dominant_reaction?: string
 }
 
@@ -37,7 +41,24 @@ function useAgents(country: string, limit: number) {
   })
 }
 
-const pct = (v: number) => `${(v * 100).toFixed(0)}%`
+const parseNumber = (value: unknown): number | null => {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value.replace(/,/g, ''))
+      : Number.NaN
+  return Number.isFinite(parsed) ? parsed : null
+}
+const toNumber = (value: unknown, fallback = 0) => parseNumber(value) ?? fallback
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
+const pct = (v: unknown) => `${(clamp01(toNumber(v)) * 100).toFixed(0)}%`
+const avg = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0
+const rounded = (value: number, digits = 1) => +value.toFixed(digits)
+const label = (value: unknown) => String(value ?? 'unknown').replace(/_/g, ' ')
+const whole = (value: unknown) => {
+  const parsed = parseNumber(value)
+  return parsed === null ? 'n/a' : parsed.toFixed(0)
+}
 const polLabel = (p: number) => p < -0.5 ? 'Far Left' : p < -0.1 ? 'Left' : p < 0.1 ? 'Center' : p < 0.5 ? 'Right' : 'Far Right'
 const polColor = (p: number) => p < -0.3 ? '#3b82f6' : p < 0 ? '#60a5fa' : p < 0.1 ? '#94a3b8' : p < 0.4 ? '#f97316' : '#ef4444'
 
@@ -48,8 +69,9 @@ const REACTION_COLORS: Record<string, string> = {
 export default function AgentExplorerPage() {
   const { code } = useParams<{ code: string }>()
   const [limit] = useState(100)
-  const { data, isLoading } = useAgents(code!, limit)
-  const country = COUNTRIES[code!]
+  const selectedCode = code ?? ''
+  const { data, isLoading } = useAgents(selectedCode, limit)
+  const country = COUNTRIES[selectedCode]
 
   if (isLoading) return (
     <div className="grid grid-cols-3 gap-4 mt-4">{Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}</div>
@@ -61,40 +83,32 @@ export default function AgentExplorerPage() {
   // Scatter plot data
   const scatterData = agents.map((a, i) => ({
     id: i,
-    politics: +a.politics.toFixed(2),
-    optimism: +(a.behavior.optimism * 100).toFixed(1),
-    trust: +(a.behavior.trust_institutions * 100).toFixed(1),
-    iq: a.demographics.iq,
-    age: a.demographics.age,
+    politics: rounded(toNumber(a.politics), 2),
+    optimism: rounded(clamp01(toNumber(a.behavior.optimism)) * 100),
+    trust: rounded(clamp01(toNumber(a.behavior.trust_institutions)) * 100),
+    iq: toNumber(a.iq ?? a.demographics.iq),
+    age: toNumber(a.demographics.age),
     reaction: a.dominant_reaction || 'APATHY',
-    education: a.demographics.education,
+    education: label(a.demographics.education),
   }))
 
   // Stats
-  const avgIQ = (agents.reduce((s, a) => s + a.demographics.iq, 0) / agents.length).toFixed(0)
-  const avgIncome = (agents.reduce((s, a) => s + a.economic.income, 0) / agents.length).toFixed(0)
-  const avgOptimism = (agents.reduce((s, a) => s + a.behavior.optimism, 0) / agents.length)
-  const avgTrust = (agents.reduce((s, a) => s + a.behavior.trust_institutions, 0) / agents.length)
-
-  // Education distribution
-  const eduCounts: Record<string, number> = {}
-  agents.forEach(a => { eduCounts[a.demographics.education] = (eduCounts[a.demographics.education] || 0) + 1 })
-
-  // Religion distribution
-  const relCounts: Record<string, number> = {}
-  agents.forEach(a => { relCounts[a.demographics.religion] = (relCounts[a.demographics.religion] || 0) + 1 })
+  const avgIQ = avg(agents.map(a => toNumber(a.iq ?? a.demographics.iq)))
+  const avgIncome = avg(agents.map(a => toNumber(a.economic.income)))
+  const avgOptimism = avg(agents.map(a => clamp01(toNumber(a.behavior.optimism))))
+  const avgTrust = avg(agents.map(a => clamp01(toNumber(a.behavior.trust_institutions))))
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-4">
       {/* Back + Header */}
       <div className="flex items-center gap-4">
-        <Link to={`/country/${code}`} className="text-xs text-slate-500 hover:text-accent transition-colors">&larr; Country Detail</Link>
+        <Link to={`/country/${selectedCode}`} className="text-xs text-slate-500 hover:text-accent transition-colors">&larr; Country Detail</Link>
       </div>
 
       <div className="flex items-center gap-4 mb-2">
         <span className="text-4xl">{country?.flag}</span>
         <div>
-          <h2 className="text-2xl font-bold">{country?.name || code} — Agent Explorer</h2>
+          <h2 className="text-2xl font-bold">{country?.name || selectedCode} - Agent Explorer</h2>
           <span className="text-xs text-slate-500 font-mono">{agents.length} agents sampled</span>
         </div>
       </div>
@@ -102,8 +116,8 @@ export default function AgentExplorerPage() {
       {/* Quick stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Avg IQ', value: avgIQ, color: '#60a5fa' },
-          { label: 'Avg Income', value: `$${Number(avgIncome).toLocaleString()}`, color: '#34d399' },
+          { label: 'Avg IQ', value: avgIQ.toFixed(0), color: '#60a5fa' },
+          { label: 'Avg Income', value: `$${avgIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: '#34d399' },
           { label: 'Avg Optimism', value: pct(avgOptimism), color: '#fbbf24' },
           { label: 'Avg Trust', value: pct(avgTrust), color: '#a78bfa' },
         ].map((s, i) => (
@@ -134,7 +148,16 @@ export default function AgentExplorerPage() {
             />
             <Tooltip
               contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }}
-              formatter={(v: any, name: string) => [name === 'Politics' ? (Number(v) > 0 ? 'Right ' : 'Left ') + Math.abs(Number(v)).toFixed(2) : `${v}%`, name]}
+              formatter={(v: unknown, name: unknown): [string, string] => {
+                const metric = String(name)
+                const value = toNumber(v)
+                return [
+                  metric === 'Politics'
+                    ? `${value > 0 ? 'Right' : value < 0 ? 'Left' : 'Center'} ${Math.abs(value).toFixed(2)}`
+                    : `${value.toFixed(1)}%`,
+                  metric,
+                ]
+              }}
               labelFormatter={() => ''}
             />
             <Scatter data={scatterData}>
@@ -158,26 +181,29 @@ export default function AgentExplorerPage() {
       <div className="glass p-5">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-3">Individual Agents (first 30)</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 max-h-[500px] overflow-y-auto">
-          {agents.slice(0, 30).map((a, i) => (
-            <div key={i} className="bg-bg2 rounded-lg p-3 text-[10px]">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-xs">Agent #{i + 1}</span>
-                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold" style={{
-                  color: polColor(a.politics),
-                  background: polColor(a.politics) + '18',
-                }}>{polLabel(a.politics)}</span>
-              </div>
-              <div className="space-y-0.5 text-slate-400">
-                <div>Age: <span className="text-slate-300 font-mono">{a.demographics.age}</span> | IQ: <span className="text-slate-300 font-mono">{a.demographics.iq}</span></div>
-                <div>Edu: <span className="text-slate-300">{a.demographics.education.replace(/_/g, ' ')}</span></div>
-                <div>Income: <span className="text-slate-300 font-mono">${a.economic.income.toLocaleString()}</span></div>
-                <div className="flex gap-2 mt-1">
-                  <span>Opt: <span className="font-mono" style={{ color: '#fbbf24' }}>{pct(a.behavior.optimism)}</span></span>
-                  <span>Trust: <span className="font-mono" style={{ color: '#34d399' }}>{pct(a.behavior.trust_institutions)}</span></span>
+          {agents.slice(0, 30).map((a, i) => {
+            const politics = toNumber(a.politics)
+            return (
+              <div key={a.id ?? i} className="bg-bg2 rounded-lg p-3 text-[10px]">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs">Agent #{i + 1}</span>
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-bold" style={{
+                    color: polColor(politics),
+                    background: polColor(politics) + '18',
+                  }}>{polLabel(politics)}</span>
+                </div>
+                <div className="space-y-0.5 text-slate-400">
+                  <div>Age: <span className="text-slate-300 font-mono">{whole(a.demographics.age)}</span> | IQ: <span className="text-slate-300 font-mono">{whole(a.iq ?? a.demographics.iq)}</span></div>
+                  <div>Edu: <span className="text-slate-300">{label(a.demographics.education)}</span></div>
+                  <div>Income: <span className="text-slate-300 font-mono">${toNumber(a.economic.income).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></div>
+                  <div className="flex gap-2 mt-1">
+                    <span>Opt: <span className="font-mono" style={{ color: '#fbbf24' }}>{pct(a.behavior.optimism)}</span></span>
+                    <span>Trust: <span className="font-mono" style={{ color: '#34d399' }}>{pct(a.behavior.trust_institutions)}</span></span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </motion.div>

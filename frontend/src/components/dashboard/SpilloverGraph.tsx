@@ -1,18 +1,9 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useMemo, useRef, useState } from 'react'
 import { COUNTRIES } from '../../constants/countries'
-import { useAllPredictions } from '../../api/queries'
+import { useAllPredictions, useRelationsNetwork } from '../../api/queries'
+import type { RelationEdge, RelationKind } from '../../types'
 
-interface Relation {
-  a: string
-  b: string
-  type: 'TRADE' | 'ALLIANCE' | 'RIVALRY'
-  strength: number
-}
-
-// Hardcoded from intercountry.py DEFAULT_RELATIONS
-const RELATIONS: Relation[] = [
-  // Trade
+const FALLBACK_RELATIONS: RelationEdge[] = [
   { a: 'US', b: 'CN', type: 'TRADE', strength: 0.8 },
   { a: 'US', b: 'MX', type: 'TRADE', strength: 0.7 },
   { a: 'US', b: 'JP', type: 'TRADE', strength: 0.6 },
@@ -35,7 +26,6 @@ const RELATIONS: Relation[] = [
   { a: 'ID', b: 'CN', type: 'TRADE', strength: 0.5 },
   { a: 'NG', b: 'GB', type: 'TRADE', strength: 0.4 },
   { a: 'TR', b: 'DE', type: 'TRADE', strength: 0.5 },
-  // Alliances
   { a: 'US', b: 'GB', type: 'ALLIANCE', strength: 0.9 },
   { a: 'US', b: 'JP', type: 'ALLIANCE', strength: 0.8 },
   { a: 'US', b: 'KR', type: 'ALLIANCE', strength: 0.8 },
@@ -47,7 +37,6 @@ const RELATIONS: Relation[] = [
   { a: 'GB', b: 'AU', type: 'ALLIANCE', strength: 0.7 },
   { a: 'RU', b: 'CN', type: 'ALLIANCE', strength: 0.5 },
   { a: 'SA', b: 'US', type: 'ALLIANCE', strength: 0.5 },
-  // Rivalries
   { a: 'US', b: 'CN', type: 'RIVALRY', strength: 0.6 },
   { a: 'US', b: 'RU', type: 'RIVALRY', strength: 0.7 },
   { a: 'IN', b: 'PK', type: 'RIVALRY', strength: 0.8 },
@@ -58,8 +47,18 @@ const RELATIONS: Relation[] = [
   { a: 'EG', b: 'TR', type: 'RIVALRY', strength: 0.4 },
 ]
 
-const TYPE_COLORS = { TRADE: '#22d3ee', ALLIANCE: '#22c55e', RIVALRY: '#ef4444' }
-const TYPE_DASH = { TRADE: '', ALLIANCE: '8 4', RIVALRY: '4 4' }
+const TYPE_COLORS: Record<RelationKind, string> = {
+  TRADE: '#22d3ee',
+  ALLIANCE: '#22c55e',
+  RIVALRY: '#ef4444',
+  SANCTIONS: '#f97316',
+}
+const TYPE_DASH: Record<RelationKind, string> = {
+  TRADE: '',
+  ALLIANCE: '8 4',
+  RIVALRY: '4 4',
+  SANCTIONS: '2 5',
+}
 
 interface NodePos { x: number; y: number }
 
@@ -76,17 +75,25 @@ function layoutNodes(width: number, height: number): Record<string, NodePos> {
 }
 
 const FILTER_OPTIONS = ['ALL', 'TRADE', 'ALLIANCE', 'RIVALRY'] as const
+type RelationFilter = typeof FILTER_OPTIONS[number]
 
 export default function SpilloverGraph() {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [filter, setFilter] = useState<typeof FILTER_OPTIONS[number]>('ALL')
+  const [filter, setFilter] = useState<RelationFilter>('ALL')
   const [hovered, setHovered] = useState<string | null>(null)
   const { data: predictions } = useAllPredictions()
+  const countryCodes = useMemo(() => {
+    const predicted = Object.keys(predictions ?? {})
+    return predicted.length > 0 ? predicted : Object.keys(COUNTRIES)
+  }, [predictions])
+  const { data: networkRelations, isFetching: isLoadingRelations } = useRelationsNetwork(countryCodes)
 
   const width = 700, height = 500
   const positions = useMemo(() => layoutNodes(width, height), [])
 
-  const filteredRelations = filter === 'ALL' ? RELATIONS : RELATIONS.filter(r => r.type === filter)
+  const relations = networkRelations?.length ? networkRelations : FALLBACK_RELATIONS
+  const relationSource = networkRelations?.length ? 'API' : isLoadingRelations ? 'Loading' : 'Static'
+  const filteredRelations = filter === 'ALL' ? relations : relations.filter(r => r.type === filter)
   const hoveredRelations = hovered
     ? filteredRelations.filter(r => r.a === hovered || r.b === hovered)
     : filteredRelations
@@ -97,20 +104,23 @@ export default function SpilloverGraph() {
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           Inter-Country Relations Network
         </h3>
-        <div className="flex gap-1">
-          {FILTER_OPTIONS.map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className="px-2 py-1 rounded text-[9px] font-semibold transition-all"
-              style={{
-                background: filter === f ? 'rgba(59,130,246,0.2)' : 'rgba(100,116,139,0.1)',
-                color: filter === f ? '#60a5fa' : '#64748b',
-              }}
-            >
-              {f}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] text-slate-600 font-mono">Source: {relationSource}</span>
+          <div className="flex gap-1">
+            {FILTER_OPTIONS.map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className="px-2 py-1 rounded text-[9px] font-semibold transition-all"
+                style={{
+                  background: filter === f ? 'rgba(59,130,246,0.2)' : 'rgba(100,116,139,0.1)',
+                  color: filter === f ? '#60a5fa' : '#64748b',
+                }}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -121,16 +131,16 @@ export default function SpilloverGraph() {
         style={{ maxHeight: 500 }}
       >
         {/* Edges */}
-        {hoveredRelations.map((r, i) => {
+        {hoveredRelations.map((r) => {
           const pa = positions[r.a], pb = positions[r.b]
           if (!pa || !pb) return null
           const isHighlighted = !hovered || r.a === hovered || r.b === hovered
           return (
             <line
-              key={`edge-${i}`}
+              key={`${r.type}-${r.a}-${r.b}`}
               x1={pa.x} y1={pa.y} x2={pb.x} y2={pb.y}
               stroke={TYPE_COLORS[r.type]}
-              strokeWidth={r.strength * 3}
+              strokeWidth={Math.max(1, r.strength * 3)}
               strokeDasharray={TYPE_DASH[r.type]}
               opacity={isHighlighted ? 0.6 : 0.1}
             />
@@ -173,7 +183,7 @@ export default function SpilloverGraph() {
       <div className="flex gap-4 mt-3 justify-center">
         {Object.entries(TYPE_COLORS).map(([type, color]) => (
           <span key={type} className="flex items-center gap-1.5 text-[10px]">
-            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke={color} strokeWidth={2} strokeDasharray={TYPE_DASH[type as keyof typeof TYPE_DASH]} /></svg>
+            <svg width="20" height="8"><line x1="0" y1="4" x2="20" y2="4" stroke={color} strokeWidth={2} strokeDasharray={TYPE_DASH[type as RelationKind]} /></svg>
             <span className="text-slate-400">{type}</span>
           </span>
         ))}

@@ -6,9 +6,14 @@ import { COUNTRIES, CHART_COLORS } from '../constants/countries'
 import MetricCard from '../components/common/MetricCard'
 import Badge from '../components/common/Badge'
 import { SkeletonCard } from '../components/common/Skeleton'
+import type { HistoryEntry } from '../types'
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`
 const $ = (v: number) => '$' + v.toLocaleString()
+type TrendMetric = 'average_optimism' | 'social_cohesion' | 'revolution_risk' | 'political_stability'
+type ForecastMetric = `fc_${TrendMetric}`
+type ChartDatum = { day: number; forecast?: boolean } & Partial<Record<TrendMetric | ForecastMetric, number>>
+const tooltipPct = (v: unknown) => `${(Number(v) * 100).toFixed(1)}%`
 
 export default function CountryDetailPage() {
   const { code } = useParams<{ code: string }>()
@@ -30,7 +35,7 @@ export default function CountryDetailPage() {
           <Pie data={data.slice(0, 8)} dataKey="pct" nameKey="label" cx="50%" cy="50%" outerRadius={70} innerRadius={35} strokeWidth={0}>
             {data.slice(0, 8).map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
           </Pie>
-          <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} />
+          <Tooltip formatter={(v: unknown) => `${Number(v).toFixed(1)}%`} contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} />
         </PieChart>
       </ResponsiveContainer>
       <div className="flex flex-wrap gap-1.5 mt-2">
@@ -233,15 +238,15 @@ export default function CountryDetailPage() {
       {history.length > 0 && (() => {
         // Compute forecast: simple linear regression on last N points, project 7 days
         const forecastDays = 7
-        const metricKeys = ['average_optimism', 'social_cohesion', 'revolution_risk', 'political_stability'] as const
+        const metricKeys = ['average_optimism', 'social_cohesion', 'revolution_risk', 'political_stability'] as const satisfies readonly TrendMetric[]
         const lastDay = history[history.length - 1]?.day ?? 0
 
-        function linearForecast(data: any[], key: string, ahead: number) {
+        function linearForecast(data: HistoryEntry[], key: TrendMetric, ahead: number): ChartDatum[] {
           if (data.length < 3) return []
           const n = Math.min(data.length, 14) // use last 14 points
           const recent = data.slice(-n)
-          const xs = recent.map((_: any, i: number) => i)
-          const ys = recent.map((d: any) => d[key] ?? 0)
+          const xs = recent.map((_, i: number) => i)
+          const ys = recent.map((d) => d[key] ?? 0)
           const mx = xs.reduce((a: number, b: number) => a + b, 0) / n
           const my = ys.reduce((a: number, b: number) => a + b, 0) / n
           let num = 0, den = 0
@@ -257,9 +262,9 @@ export default function CountryDetailPage() {
         }
 
         // Build forecast points using a single regression call per metric
-        const forecastPoints: any[] = []
+        const forecastPoints: ChartDatum[] = []
         for (let d = 1; d <= forecastDays; d++) {
-          const point: any = { day: lastDay + d }
+          const point: ChartDatum = { day: lastDay + d }
           metricKeys.forEach(k => {
             const fc = linearForecast(history, k, forecastDays)
             if (fc[d - 1]) point[`fc_${k}`] = fc[d - 1][k]
@@ -272,14 +277,20 @@ export default function CountryDetailPage() {
         // Forecast rows have fc_ keys, actual keys are null
         // Bridge point connects them (has both)
         const lastHist = history[history.length - 1]
-        const bridge: any = { day: lastHist.day }
+        const bridge: ChartDatum = { day: lastHist.day }
         metricKeys.forEach(k => {
-          bridge[k] = lastHist[k as keyof typeof lastHist]
-          bridge[`fc_${k}`] = lastHist[k as keyof typeof lastHist]
+          bridge[k] = lastHist[k]
+          bridge[`fc_${k}`] = lastHist[k]
         })
 
-        const chartData = [
-          ...history.map(h => ({ ...h })),
+        const chartData: ChartDatum[] = [
+          ...history.map(h => ({
+            day: h.day,
+            average_optimism: h.average_optimism,
+            social_cohesion: h.social_cohesion,
+            revolution_risk: h.revolution_risk,
+            political_stability: h.political_stability,
+          })),
           bridge,
           ...forecastPoints,
         ]
@@ -294,7 +305,7 @@ export default function CountryDetailPage() {
               <LineChart data={chartData}>
                 <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 10 }} />
                 <YAxis domain={[0, 1]} tickFormatter={v => `${(v * 100).toFixed(0)}%`} tick={{ fill: '#64748b', fontSize: 10 }} />
-                <Tooltip contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} formatter={(v: any) => `${(Number(v) * 100).toFixed(1)}%`} />
+                <Tooltip contentStyle={{ background: '#1a2332', border: '1px solid #334155', borderRadius: 8, fontSize: 11 }} formatter={tooltipPct} />
                 {/* Actual lines (solid) */}
                 <Line dataKey="average_optimism" name="Optimism" stroke="#3b82f6" strokeWidth={2} dot={false} connectNulls={false} />
                 <Line dataKey="social_cohesion" name="Trust" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />

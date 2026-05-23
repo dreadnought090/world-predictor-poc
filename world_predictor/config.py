@@ -20,6 +20,7 @@ DEFAULTS: Dict[str, Any] = {
     "simulation": {
         "agents_per_country": 1000,
         "countries": ["US", "CN", "IN", "BR", "RU"],
+        "random_seed": None,
         "impact_weights": {
             "economic": 0.4,
             "social": 0.3,

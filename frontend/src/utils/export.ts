@@ -1,12 +1,12 @@
 /**
  * Export data as CSV download.
  */
-export function downloadCSV(data: Record<string, any>[], filename: string) {
+export function downloadCSV(data: Record<string, unknown>[], filename: string) {
   if (data.length === 0) return
 
   const headers = Object.keys(data[0])
 
-  function escapeCSV(val: any): string {
+  function escapeCSV(val: unknown): string {
     if (val === null || val === undefined) return ''
     const str = String(val)
     if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
@@ -32,7 +32,7 @@ export function downloadCSV(data: Record<string, any>[], filename: string) {
 /**
  * Export data as JSON download.
  */
-export function downloadJSON(data: any, filename: string) {
+export function downloadJSON(data: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
