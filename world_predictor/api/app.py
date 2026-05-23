@@ -23,6 +23,15 @@ from world_predictor.api.models import (
     BacktestResponse,
     HistoricalEventResponse,
     MarketSignalsResponse,
+    ScenarioAssumptionsResponse,
+    ScenarioParseRequest,
+)
+from world_predictor.simulation.explainability import (
+    explain_country_state,
+    parse_scenario_text,
+    scenario_country_explanations,
+    scenario_deltas,
+    scenario_top_impacts,
 )
 
 load_dotenv()
@@ -144,6 +153,26 @@ async def get_predictions(country: str):
     if not simulation_engine:
         return {"error": "Engine not initialized"}
     return simulation_engine.get_predictions(country)
+
+
+@app.get("/predictions/{country}/explain")
+async def explain_prediction(country: str):
+    """Explain the current risk posture for a country."""
+    if not simulation_engine:
+        raise HTTPException(status_code=503, detail="Engine not initialized")
+
+    code = country.upper()
+    with simulation_engine._lock:
+        country_engine = simulation_engine.engines.get(code)
+        if not country_engine:
+            raise HTTPException(status_code=404, detail=f"Country {code} not loaded")
+
+        metrics = country_engine._calculate_metrics()
+        metrics["revolution_risk"] = country_engine._calculate_revolution_risk(
+            metrics,
+            country_engine.reaction_history.get(country_engine.current_day, {}),
+        )
+        return explain_country_state(code, country_engine, metrics)
 
 
 @app.get("/predictions")
@@ -589,6 +618,13 @@ async def get_market_signals() -> MarketSignalsResponse:
 
 # ---- Scenarios ----
 
+@app.post("/scenarios/parse", response_model=ScenarioAssumptionsResponse)
+async def parse_scenario(payload: ScenarioParseRequest):
+    """Parse free-form scenario text into explicit assumptions."""
+    countries = simulation_engine.countries if simulation_engine else sim_config().get("countries", [])
+    return parse_scenario_text(payload.text, countries)
+
+
 @app.post("/scenarios/run")
 async def run_scenario(
     name: str = Query(min_length=1, max_length=120),
@@ -596,12 +632,13 @@ async def run_scenario(
     preset_event: Optional[str] = Query(default=None, max_length=120),
     preset_policy: Optional[str] = Query(default=None, max_length=120),
     policy_country: str = Query(default="US", min_length=2, max_length=2),
+    scenario_text: Optional[str] = Query(default=None, min_length=3, max_length=1000),
     days: int = Query(default=30, ge=1, le=365),
 ):
     """Run a what-if scenario."""
     import copy
     from world_predictor.simulation.scenarios import ScenarioEngine
-    from world_predictor.simulation.events import PRESET_EVENTS
+    from world_predictor.simulation.events import GeoEvent, PRESET_EVENTS
     from world_predictor.simulation.institutions import PRESET_POLICIES
 
     if not simulation_engine:
@@ -610,11 +647,28 @@ async def run_scenario(
     if simulation_engine.scenario_engine is None:
         simulation_engine.scenario_engine = ScenarioEngine()
 
+    assumptions = parse_scenario_text(scenario_text, simulation_engine.countries) if scenario_text else None
+
     events = []
     if preset_event and preset_event in PRESET_EVENTS:
         events.append(copy.deepcopy(PRESET_EVENTS[preset_event]))
+    elif assumptions:
+        events.append(GeoEvent(
+            event_type=assumptions["event_type"],
+            name=assumptions["title"],
+            affected_countries=assumptions["affected_countries"],
+            secondary_countries=assumptions["secondary_countries"],
+            magnitude=assumptions["magnitude"],
+            duration_days=assumptions["duration_days"],
+            decay_rate=0.96 if assumptions["duration_days"] >= 45 else 0.9,
+        ))
 
     policies = {}
+    if not preset_policy and assumptions and assumptions.get("suggested_policy"):
+        preset_policy = assumptions["suggested_policy"]
+        if assumptions["affected_countries"]:
+            policy_country = assumptions["affected_countries"][0]
+
     if preset_policy and preset_policy in PRESET_POLICIES:
         policies[policy_country] = [copy.deepcopy(PRESET_POLICIES[preset_policy])]
 
@@ -637,7 +691,16 @@ async def run_scenario(
     loop = asyncio.get_event_loop()
     def run_locked_scenario():
         with simulation_engine._lock:
-            return simulation_engine.scenario_engine.run_scenario(
+            baseline_state = {}
+            for country, country_engine in simulation_engine.engines.items():
+                metrics = country_engine._calculate_metrics()
+                metrics["revolution_risk"] = country_engine._calculate_revolution_risk(
+                    metrics,
+                    country_engine.reaction_history.get(country_engine.current_day, {}),
+                )
+                baseline_state[country] = metrics
+
+            result = simulation_engine.scenario_engine.run_scenario(
                 engine=simulation_engine,
                 name=name, description=description,
                 events=events or None,
@@ -645,8 +708,10 @@ async def run_scenario(
                 news_items=items,
                 days=days,
             )
+            return result, baseline_state
 
-    result = await loop.run_in_executor(None, run_locked_scenario)
+    result, baseline_state = await loop.run_in_executor(None, run_locked_scenario)
+    deltas = scenario_deltas(baseline_state, result.final_state)
 
     return {
         "scenario_id": result.scenario_id,
@@ -656,6 +721,11 @@ async def run_scenario(
         "events_injected": result.events_injected,
         "policies_injected": result.policies_injected,
         "final_state": result.final_state,
+        "baseline_state": baseline_state,
+        "deltas": deltas,
+        "top_impacts": scenario_top_impacts(deltas),
+        "explanations": scenario_country_explanations(deltas),
+        "assumptions": assumptions,
     }
 
 

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import client from './client'
-import type { ScenarioResult, ScenarioRunParams } from '../types'
+import type { ScenarioAssumptions, ScenarioResult, ScenarioRunParams } from '../types'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -79,5 +79,13 @@ export function useRunScenario() {
       toast.success(`Scenario "${params.name}" completed`)
     },
     onError: (error) => toast.error(error.message || 'Scenario failed'),
+  })
+}
+
+export function useParseScenario() {
+  return useMutation<ScenarioAssumptions, Error, string>({
+    mutationFn: (text) =>
+      client.post('/scenarios/parse', { text }).then(r => unwrapApiResult<ScenarioAssumptions>(r.data)),
+    onError: (error) => toast.error(error.message || 'Scenario parsing failed'),
   })
 }

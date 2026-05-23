@@ -55,6 +55,17 @@ async def test_predictions(client):
 
 
 @pytest.mark.asyncio
+async def test_prediction_explanation(client):
+    resp = await client.get("/predictions/US/explain")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["country"] == "US"
+    assert data["confidence"]["level"] in {"low", "medium", "high"}
+    assert data["drivers"]
+    assert "low_trust" in data["risk_components"]
+
+
+@pytest.mark.asyncio
 async def test_all_predictions(client):
     resp = await client.get("/predictions")
     assert resp.status_code == 200
@@ -182,6 +193,22 @@ async def test_market_signals_frontend_contract(client, monkeypatch):
     }
     assert by_country["DE"]["currency"] == "EUR"
     assert by_country["DE"]["exchange_rate"] == 0.8
+
+
+@pytest.mark.asyncio
+async def test_scenario_parse_endpoint(client):
+    resp = await client.post(
+        "/scenarios/parse",
+        json={"text": "China blocks rare earth exports to the US for 90 days"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["event_type"] == "TRADE_WAR"
+    assert data["duration_days"] == 90
+    assert "CN" in data["affected_countries"]
+    assert "US" in data["affected_countries"]
+    assert "trade" in data["sectors"]
+    assert data["confidence"]["level"] in {"medium", "high"}
 
 
 @pytest.mark.asyncio

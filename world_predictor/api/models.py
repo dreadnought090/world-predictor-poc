@@ -135,6 +135,32 @@ class HistoricalEventResponse(BaseModel):
     description: str = ""
 
 
+class ScenarioParseRequest(StrictRequestModel):
+    text: str = Field(min_length=3, max_length=1000)
+
+
+class ConfidenceResponse(BaseModel):
+    score: float
+    level: str
+    reasons: List[str] = Field(default_factory=list)
+
+
+class ScenarioAssumptionsResponse(BaseModel):
+    title: str
+    event_type: str
+    affected_countries: List[str]
+    secondary_countries: List[str] = Field(default_factory=list)
+    sectors: List[str] = Field(default_factory=list)
+    severity: str
+    magnitude: float
+    duration_days: int
+    uncertainty: str
+    confidence: Dict[str, Any]
+    suggested_preset_event: Optional[str] = None
+    suggested_policy: Optional[str] = None
+    summary: str
+
+
 class BacktestCountryDay(BaseModel):
     day: Optional[int] = None
     metrics: Dict[str, float] = Field(default_factory=dict)
