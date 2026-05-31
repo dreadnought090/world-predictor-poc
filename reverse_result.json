@@ -1,0 +1,68 @@
+{
+  "intercept": 0.287389,
+  "coefficients": [
+    {
+      "name": "impact",
+      "coefficient": -0.054057,
+      "importance": 0.0948
+    },
+    {
+      "name": "source_credibility",
+      "coefficient": 0.147152,
+      "importance": 0.2581
+    },
+    {
+      "name": "source_politics",
+      "coefficient": 0.000198,
+      "importance": 0.0003
+    },
+    {
+      "name": "trust_score",
+      "coefficient": 0.344802,
+      "importance": 0.6048
+    },
+    {
+      "name": "category_weight",
+      "coefficient": -0.000822,
+      "importance": 0.0014
+    },
+    {
+      "name": "impact\u00d7credibility",
+      "coefficient": -0.004224,
+      "importance": 0.0074
+    },
+    {
+      "name": "impact\u00d7trust",
+      "coefficient": 0.011229,
+      "importance": 0.0197
+    },
+    {
+      "name": "credibility\u00d7trust",
+      "coefficient": 0.007657,
+      "importance": 0.0134
+    }
+  ],
+  "threshold_high": 0.58,
+  "threshold_low": 0.4197,
+  "r2_score": 0.9985,
+  "accuracy": 0.9755,
+  "category_scores": {
+    "health": 0.5312,
+    "social": 0.5295,
+    "economy": 0.5282,
+    "technology": 0.528,
+    "politics": 0.5278,
+    "diplomacy": 0.5272,
+    "environment": 0.5266,
+    "military": 0.5261,
+    "crisis": 0.5225
+  },
+  "signal_distribution": {
+    "HIGH": 0.3403,
+    "NEUTRAL": 0.5058,
+    "LOW": 0.1538
+  },
+  "formula_string": "composite_score =\n  +0.2874 (intercept)\n  + 0.3448 \u00d7 trust_score\n  + 0.1472 \u00d7 source_credibility\n  - 0.0541 \u00d7 impact\n  + 0.0112 \u00d7 impact\u00d7trust\n  + 0.0077 \u00d7 credibility\u00d7trust\n  - 0.0042 \u00d7 impact\u00d7credibility\n  - 0.0008 \u00d7 category_weight\n  + 0.0002 \u00d7 source_politics\n\nsignal:\n  HIGH    if composite_score > 0.5800\n  LOW     if composite_score < 0.4197\n  NEUTRAL otherwise\n\nfit quality:\n  R\u00b2 (regression)     = 0.9985\n  accuracy (3-class)  = 0.9755",
+  "probe_records": 858,
+  "elapsed_seconds": 0.05
+}
