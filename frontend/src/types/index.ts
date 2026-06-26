@@ -15,6 +15,12 @@ export interface Prediction {
   metrics: Metrics
 }
 
+export interface Confidence {
+  score: number
+  level: string
+  reasons?: string[]
+}
+
 export interface DemographicDist {
   label: string
   count: number
@@ -142,7 +148,46 @@ export interface ScenarioRunParams {
   preset_event?: string
   preset_policy?: string
   policy_country?: string
+  scenario_text?: string
   days?: number
+}
+
+export interface ScenarioAssumptions {
+  title: string
+  event_type: string
+  affected_countries: string[]
+  secondary_countries: string[]
+  sectors: string[]
+  severity: string
+  magnitude: number
+  duration_days: number
+  uncertainty: string
+  confidence: Confidence
+  suggested_preset_event?: string | null
+  suggested_policy?: string | null
+  summary: string
+}
+
+export interface ScenarioImpact {
+  country: string
+  risk_delta: number
+  stability_delta: number
+  optimism_delta: number
+  severity: number
+  direction: 'positive' | 'negative' | 'neutral'
+}
+
+export interface ScenarioDriver {
+  metric: keyof Metrics
+  label: string
+  delta: number
+  direction: 'positive' | 'negative' | 'neutral'
+}
+
+export interface ScenarioExplanation {
+  country: string
+  drivers: ScenarioDriver[]
+  summary: string
 }
 
 export interface ScenarioResult {
@@ -157,4 +202,9 @@ export interface ScenarioResult {
   events_injected: string[]
   policies_injected: string[]
   final_state: Record<string, Partial<Metrics>>
+  baseline_state?: Record<string, Partial<Metrics>>
+  deltas?: Record<string, Record<string, { baseline: number; scenario: number; delta: number }>>
+  top_impacts?: ScenarioImpact[]
+  explanations?: ScenarioExplanation[]
+  assumptions?: ScenarioAssumptions | null
 }

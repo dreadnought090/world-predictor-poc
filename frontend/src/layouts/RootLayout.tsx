@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { Toaster } from 'sonner'
+import TheWire from '../components/dashboard/TheWire'
 import Header from './Header'
 
 export default function RootLayout() {
@@ -7,6 +8,7 @@ export default function RootLayout() {
     <div className="min-h-screen relative z-[1]">
       <Header />
       <main className="max-w-[1600px] mx-auto p-4 flex flex-col gap-4">
+        <TheWire />
         <Outlet />
       </main>
       <Toaster
