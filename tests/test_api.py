@@ -5,7 +5,8 @@ from world_predictor.api.app import app, lifespan
 
 
 @pytest_asyncio.fixture
-async def client():
+async def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("WP_DB_PATH", str(tmp_path / "world_predictor_test.db"))
     async with lifespan(app):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as c:

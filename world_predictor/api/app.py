@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
     global simulation_engine, db
 
     # Initialize database
-    db = Database()
+    db = Database(path=os.environ.get("WP_DB_PATH"))
     logger.info("Database initialized at %s", db.path)
 
     # Initialize multi-country simulation engine
